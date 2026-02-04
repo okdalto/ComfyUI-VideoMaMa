@@ -257,8 +257,8 @@ class SAM2VideoMaskGenerator:
                     "default": "checkpoints/sam2/sam2.1_hiera_large.pt",
                     "multiline": False
                 }),
-                "config_file": ("STRING", {
-                    "default": "configs/sam2.1/sam2.1_hiera_l.yaml",
+                "config_name": ("STRING", {
+                    "default": "sam2.1_hiera_l",
                     "multiline": False
                 }),
                 "points_x": ("STRING", {
@@ -284,7 +284,7 @@ class SAM2VideoMaskGenerator:
         self,
         images,
         checkpoint_path: str,
-        config_file: str,
+        config_name: str,
         points_x: str,
         points_y: str,
         labels: str
@@ -297,10 +297,9 @@ class SAM2VideoMaskGenerator:
                 "git clone https://github.com/facebookresearch/sam2 && cd sam2 && pip install -e ."
             )
 
-        # Get the absolute path relative to this node's directory
+        # Get the absolute path relative to this node's directory for checkpoint
         node_dir = Path(__file__).parent
         checkpoint_path_abs = str(node_dir / checkpoint_path)
-        config_file_abs = str(node_dir / config_file)
 
         # Auto-download SAM2 checkpoint if not exists
         if not os.path.exists(checkpoint_path_abs):
@@ -357,53 +356,6 @@ class SAM2VideoMaskGenerator:
                     f"Or download manually from: https://huggingface.co/facebook/sam2.1-hiera-large"
                 )
 
-        # Auto-download config file if not exists
-        if not os.path.exists(config_file_abs):
-            print(f"SAM2 config not found at {config_file_abs}")
-            if HF_HUB_AVAILABLE:
-                print("Downloading SAM2 config from Hugging Face...")
-                try:
-                    from huggingface_hub import hf_hub_download
-
-                    # Determine which config to download
-                    if "large" in config_file.lower() or "hiera_l" in config_file.lower():
-                        repo_id = "facebook/sam2.1-hiera-large"
-                        filename = "sam2.1_hiera_l.yaml"
-                    elif "base_plus" in config_file.lower() or "hiera_b+" in config_file.lower():
-                        repo_id = "facebook/sam2.1-hiera-base-plus"
-                        filename = "sam2.1_hiera_b+.yaml"
-                    elif "small" in config_file.lower() or "hiera_s" in config_file.lower():
-                        repo_id = "facebook/sam2.1-hiera-small"
-                        filename = "sam2.1_hiera_s.yaml"
-                    elif "tiny" in config_file.lower() or "hiera_t" in config_file.lower():
-                        repo_id = "facebook/sam2.1-hiera-tiny"
-                        filename = "sam2.1_hiera_t.yaml"
-                    else:
-                        repo_id = "facebook/sam2.1-hiera-large"
-                        filename = "sam2.1_hiera_l.yaml"
-
-                    # Create directory if it doesn't exist
-                    os.makedirs(os.path.dirname(config_file_abs), exist_ok=True)
-
-                    # Download the config
-                    downloaded_path = hf_hub_download(
-                        repo_id=repo_id,
-                        filename=filename,
-                        local_dir=os.path.dirname(config_file_abs),
-                        local_dir_use_symlinks=False,
-                    )
-
-                    # If the downloaded filename doesn't match expected, rename it
-                    if downloaded_path != config_file_abs:
-                        shutil.move(downloaded_path, config_file_abs)
-
-                    print(f"SAM2 config downloaded successfully to {config_file_abs}")
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to download SAM2 config: {e}\n"
-                        f"Please download manually from: https://huggingface.co/{repo_id}"
-                    )
-
         # Parse point coordinates and labels
         try:
             x_coords = [int(x.strip()) for x in points_x.split(",")]
@@ -443,8 +395,9 @@ class SAM2VideoMaskGenerator:
 
             # Initialize SAM2 video predictor
             device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"Loading SAM2 with config: {config_name}, checkpoint: {checkpoint_path_abs}")
             predictor = build_sam2_video_predictor(
-                config_file=config_file_abs,
+                config_file=config_name,
                 ckpt_path=checkpoint_path_abs,
                 device=device
             )
