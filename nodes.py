@@ -23,38 +23,118 @@ except ImportError:
     HF_HUB_AVAILABLE = False
     print("huggingface_hub not available. Auto-download disabled.")
 
-# Try to import SAM2 (optional dependency)
-# Only accept official SAM2 package (not comfyui-rmbg's version)
+# Auto-install SAM2 if not available
+def setup_sam2():
+    """Automatically download and setup SAM2 if not available"""
+    import sys
+    import subprocess
+
+    node_dir = Path(__file__).parent
+    sam2_dir = node_dir / "sam2"
+
+    # Check if SAM2 is already in the directory
+    if sam2_dir.exists() and (sam2_dir / "__init__.py").exists():
+        # Add to path if not already there
+        sam2_parent = str(sam2_dir.parent)
+        if sam2_parent not in sys.path:
+            sys.path.insert(0, sam2_parent)
+        return True
+
+    # Try to clone SAM2
+    print("SAM2 not found. Attempting to download SAM2 automatically...")
+    try:
+        # Clone SAM2 repository
+        subprocess.run(
+            ["git", "clone", "https://github.com/facebookresearch/sam2.git", str(sam2_dir)],
+            check=True,
+            capture_output=True
+        )
+        print(f"SAM2 cloned successfully to {sam2_dir}")
+
+        # Add to Python path
+        sam2_parent = str(sam2_dir.parent)
+        if sam2_parent not in sys.path:
+            sys.path.insert(0, sam2_parent)
+
+        # Install dependencies (optional, may fail but SAM2 can still work)
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", str(sam2_dir)],
+                check=False,  # Don't fail if pip install fails
+                capture_output=True
+            )
+            print("SAM2 dependencies installed")
+        except Exception as e:
+            print(f"Warning: Could not install SAM2 dependencies: {e}")
+            print("SAM2 may still work if dependencies are already installed")
+
+        return True
+
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to clone SAM2: {e}")
+        print("Please manually install SAM2:")
+        print("  git clone https://github.com/facebookresearch/sam2.git")
+        print("  cd sam2 && pip install -e .")
+        return False
+    except Exception as e:
+        print(f"Error setting up SAM2: {e}")
+        return False
+
+# Try to import SAM2 (with auto-install)
 SAM2_AVAILABLE = False
 try:
     import sam2
     from sam2.build_sam import build_sam2_video_predictor
 
-    # Verify this is the official SAM2 with configs directory
+    # Verify this is a valid SAM2 with configs directory
     sam2_path = Path(sam2.__file__).parent
     sam2_configs_dir = sam2_path / "configs"
 
     # Check if this is comfyui-rmbg's sam2 (has no configs)
     if "comfyui-rmbg" in str(sam2_path):
         print("WARNING: Detected comfyui-rmbg's SAM2, which is not compatible.")
-        print("SAM2VideoMaskGenerator node will be disabled.")
-        print("Please install official SAM2:")
-        print("  git clone https://github.com/facebookresearch/sam2.git")
-        print("  cd sam2 && pip install -e .")
+        print("Attempting to install official SAM2...")
+        if setup_sam2():
+            # Try importing again
+            import sam2
+            from sam2.build_sam import build_sam2_video_predictor
+            sam2_path = Path(sam2.__file__).parent
+            sam2_configs_dir = sam2_path / "configs"
+            if sam2_configs_dir.exists():
+                SAM2_AVAILABLE = True
+                print(f"SAM2 loaded successfully from: {sam2_path}")
     elif not sam2_configs_dir.exists():
         print("WARNING: SAM2 installation missing configs directory.")
-        print("SAM2VideoMaskGenerator node will be disabled.")
-        print("Please install official SAM2:")
-        print("  git clone https://github.com/facebookresearch/sam2.git")
-        print("  cd sam2 && pip install -e .")
+        print("Attempting to install official SAM2...")
+        if setup_sam2():
+            # Try importing again
+            import sam2
+            from sam2.build_sam import build_sam2_video_predictor
+            sam2_path = Path(sam2.__file__).parent
+            sam2_configs_dir = sam2_path / "configs"
+            if sam2_configs_dir.exists():
+                SAM2_AVAILABLE = True
+                print(f"SAM2 loaded successfully from: {sam2_path}")
     else:
         SAM2_AVAILABLE = True
         print(f"SAM2 loaded successfully from: {sam2_path}")
+
 except ImportError:
-    print("SAM2 not available. SAM2VideoMaskGenerator node will be disabled.")
-    print("To enable SAM2 features, install official SAM2:")
-    print("  git clone https://github.com/facebookresearch/sam2.git")
-    print("  cd sam2 && pip install -e .")
+    print("SAM2 not found. Attempting to install automatically...")
+    if setup_sam2():
+        # Try importing again after setup
+        try:
+            import sam2
+            from sam2.build_sam import build_sam2_video_predictor
+            sam2_path = Path(sam2.__file__).parent
+            sam2_configs_dir = sam2_path / "configs"
+            if sam2_configs_dir.exists():
+                SAM2_AVAILABLE = True
+                print(f"SAM2 loaded successfully from: {sam2_path}")
+            else:
+                print("SAM2 downloaded but configs not found")
+        except ImportError as e:
+            print(f"Could not import SAM2 after installation: {e}")
 
 
 class VideoMaMaPipelineLoader:
