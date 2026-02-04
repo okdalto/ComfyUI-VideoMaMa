@@ -258,7 +258,7 @@ class SAM2VideoMaskGenerator:
                     "multiline": False
                 }),
                 "config_name": ("STRING", {
-                    "default": "sam2.1_hiera_l",
+                    "default": "configs/sam2.1/sam2.1_hiera_l.yaml",
                     "multiline": False
                 }),
                 "points_x": ("STRING", {
@@ -301,6 +301,56 @@ class SAM2VideoMaskGenerator:
         node_dir = Path(__file__).parent
         checkpoint_path_abs = str(node_dir / checkpoint_path)
 
+        # Determine model variant from config_name
+        if "large" in config_name.lower() or "hiera_l" in config_name.lower():
+            repo_id = "facebook/sam2.1-hiera-large"
+            checkpoint_filename = "sam2.1_hiera_large.pt"
+            config_filename = "sam2.1_hiera_l.yaml"
+        elif "base_plus" in config_name.lower() or "hiera_b+" in config_name.lower():
+            repo_id = "facebook/sam2.1-hiera-base-plus"
+            checkpoint_filename = "sam2.1_hiera_base_plus.pt"
+            config_filename = "sam2.1_hiera_b+.yaml"
+        elif "small" in config_name.lower() or "hiera_s" in config_name.lower():
+            repo_id = "facebook/sam2.1-hiera-small"
+            checkpoint_filename = "sam2.1_hiera_small.pt"
+            config_filename = "sam2.1_hiera_s.yaml"
+        elif "tiny" in config_name.lower() or "hiera_t" in config_name.lower():
+            repo_id = "facebook/sam2.1-hiera-tiny"
+            checkpoint_filename = "sam2.1_hiera_tiny.pt"
+            config_filename = "sam2.1_hiera_t.yaml"
+        else:
+            # Default to large
+            repo_id = "facebook/sam2.1-hiera-large"
+            checkpoint_filename = "sam2.1_hiera_large.pt"
+            config_filename = "sam2.1_hiera_l.yaml"
+
+        # Download config file to local configs directory
+        config_local_dir = node_dir / "configs" / "sam2.1"
+        config_local_path = config_local_dir / config_filename
+
+        if not os.path.exists(config_local_path):
+            print(f"SAM2 config not found at {config_local_path}")
+            if HF_HUB_AVAILABLE:
+                print("Downloading SAM2 config from Hugging Face...")
+                try:
+                    from huggingface_hub import hf_hub_download
+
+                    os.makedirs(config_local_dir, exist_ok=True)
+
+                    downloaded_config = hf_hub_download(
+                        repo_id=repo_id,
+                        filename=config_filename,
+                        local_dir=config_local_dir,
+                        local_dir_use_symlinks=False,
+                    )
+
+                    print(f"SAM2 config downloaded to {config_local_path}")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to download SAM2 config: {e}\n"
+                        f"Please download manually from: https://huggingface.co/{repo_id}"
+                    )
+
         # Auto-download SAM2 checkpoint if not exists
         if not os.path.exists(checkpoint_path_abs):
             print(f"SAM2 checkpoint not found at {checkpoint_path_abs}")
@@ -310,31 +360,13 @@ class SAM2VideoMaskGenerator:
                 try:
                     from huggingface_hub import hf_hub_download
 
-                    # Determine which model to download based on the checkpoint name
-                    if "large" in checkpoint_path.lower():
-                        repo_id = "facebook/sam2.1-hiera-large"
-                        filename = "sam2.1_hiera_large.pt"
-                    elif "base_plus" in checkpoint_path.lower():
-                        repo_id = "facebook/sam2.1-hiera-base-plus"
-                        filename = "sam2.1_hiera_base_plus.pt"
-                    elif "small" in checkpoint_path.lower():
-                        repo_id = "facebook/sam2.1-hiera-small"
-                        filename = "sam2.1_hiera_small.pt"
-                    elif "tiny" in checkpoint_path.lower():
-                        repo_id = "facebook/sam2.1-hiera-tiny"
-                        filename = "sam2.1_hiera_tiny.pt"
-                    else:
-                        # Default to large
-                        repo_id = "facebook/sam2.1-hiera-large"
-                        filename = "sam2.1_hiera_large.pt"
-
                     # Create directory if it doesn't exist
                     os.makedirs(os.path.dirname(checkpoint_path_abs), exist_ok=True)
 
                     # Download the checkpoint
                     downloaded_path = hf_hub_download(
                         repo_id=repo_id,
-                        filename=filename,
+                        filename=checkpoint_filename,
                         local_dir=os.path.dirname(checkpoint_path_abs),
                         local_dir_use_symlinks=False,
                     )
@@ -353,7 +385,7 @@ class SAM2VideoMaskGenerator:
                 raise RuntimeError(
                     f"SAM2 checkpoint not found at {checkpoint_path_abs}\n"
                     f"Please install huggingface_hub: pip install huggingface_hub\n"
-                    f"Or download manually from: https://huggingface.co/facebook/sam2.1-hiera-large"
+                    f"Or download manually from: https://huggingface.co/{repo_id}"
                 )
 
         # Parse point coordinates and labels
@@ -393,11 +425,32 @@ class SAM2VideoMaskGenerator:
                 frame_path = frames_dir / f"{i:05d}.jpg"
                 Image.fromarray(frame).save(frame_path, quality=95)
 
+            # Copy config to SAM2 package's config directory
+            # This ensures Hydra can find it when build_sam2_video_predictor is called
+            try:
+                import sam2
+                sam2_path = Path(sam2.__file__).parent
+                sam2_config_dest = sam2_path / "configs" / "sam2.1" / config_filename
+
+                if not os.path.exists(sam2_config_dest):
+                    print(f"Copying config to SAM2 package: {sam2_config_dest}")
+                    os.makedirs(os.path.dirname(sam2_config_dest), exist_ok=True)
+                    shutil.copy(str(config_local_path), str(sam2_config_dest))
+                    print("Config copied successfully")
+            except Exception as e:
+                print(f"Warning: Could not copy config to SAM2 package: {e}")
+                print("Attempting to use local config...")
+
             # Initialize SAM2 video predictor
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"Loading SAM2 with config: {config_name}, checkpoint: {checkpoint_path_abs}")
+
+            # Use the config name that Hydra expects: "sam2.1/sam2.1_hiera_l" (without .yaml)
+            config_name_for_hydra = f"sam2.1/{config_filename.replace('.yaml', '')}"
+            print(f"Using Hydra config name: {config_name_for_hydra}")
+
             predictor = build_sam2_video_predictor(
-                config_file=config_name,
+                config_file=config_name_for_hydra,
                 ckpt_path=checkpoint_path_abs,
                 device=device
             )
