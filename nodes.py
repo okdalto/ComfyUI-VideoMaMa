@@ -88,7 +88,8 @@ try:
 
     # Verify this is a valid SAM2 with configs directory
     sam2_path = Path(sam2.__file__).parent
-    sam2_configs_dir = sam2_path / "configs"
+    # SAM2 uses sam2_configs directory (not configs)
+    sam2_configs_dir = sam2_path.parent / "sam2_configs"
 
     # Check if this is comfyui-rmbg's sam2 (has no configs)
     if "comfyui-rmbg" in str(sam2_path):
@@ -406,13 +407,14 @@ class SAM2VideoMaskGenerator:
         try:
             import sam2
             sam2_path = Path(sam2.__file__).parent
-            sam2_configs_dir = sam2_path / "configs"
+            # SAM2 uses sam2_configs directory (not configs)
+            sam2_configs_dir = sam2_path.parent / "sam2_configs"
 
             if not sam2_configs_dir.exists():
                 raise RuntimeError(
                     f"SAM2 configs directory not found at {sam2_configs_dir}\n"
                     f"It appears you're using a SAM2 version without configs (possibly from comfyui-rmbg).\n"
-                    f"Please install the official SAM2 package:\n"
+                    f"Please restart ComfyUI to auto-install SAM2, or install manually:\n"
                     f"  git clone https://github.com/facebookresearch/sam2.git\n"
                     f"  cd sam2\n"
                     f"  pip install -e .\n"
@@ -551,15 +553,17 @@ class SAM2VideoMaskGenerator:
 
             # Copy config to SAM2 package's config directory
             # This ensures Hydra can find it when build_sam2_video_predictor is called
-            # Use the actual sam2 package directly
+            # SAM2 uses sam2_configs directory (not configs)
             try:
                 import sam2
 
-                # Get the actual sam2 package root
-                sam2_path = Path(sam2.__file__).parent
-                print(f"SAM2 package location: {sam2_path}")
+                # Get the actual sam2 package root (parent of sam2 module)
+                sam2_module_path = Path(sam2.__file__).parent
+                sam2_root = sam2_module_path.parent
+                print(f"SAM2 root location: {sam2_root}")
 
-                sam2_config_dest = sam2_path / "configs" / "sam2.1" / config_filename
+                # SAM2 uses sam2_configs directory at the root level
+                sam2_config_dest = sam2_root / "sam2_configs" / "sam2.1" / config_filename
                 print(f"Target config location: {sam2_config_dest}")
                 print(f"Local config location: {config_local_path}")
                 print(f"Config exists at target: {os.path.exists(sam2_config_dest)}")
