@@ -32,13 +32,24 @@ def setup_sam2():
     node_dir = Path(__file__).parent
     sam2_dir = node_dir / "sam2"
 
-    # Check if SAM2 is already in the directory
-    if sam2_dir.exists() and (sam2_dir / "__init__.py").exists():
-        # Add to path if not already there
+    # Check if SAM2 is already properly installed
+    sam2_configs_dir = sam2_dir / "sam2_configs"
+    if sam2_dir.exists() and (sam2_dir / "sam2" / "__init__.py").exists() and sam2_configs_dir.exists():
+        # Valid SAM2 installation, just add to path
         sam2_parent = str(sam2_dir.parent)
         if sam2_parent not in sys.path:
             sys.path.insert(0, sam2_parent)
+        print(f"Using existing SAM2 installation at {sam2_dir}")
         return True
+
+    # If directory exists but is invalid, remove it
+    if sam2_dir.exists():
+        print(f"Removing invalid SAM2 installation at {sam2_dir}")
+        try:
+            shutil.rmtree(sam2_dir)
+        except Exception as e:
+            print(f"Warning: Could not remove old SAM2 directory: {e}")
+            return False
 
     # Try to clone SAM2
     print("SAM2 not found. Attempting to download SAM2 automatically...")
