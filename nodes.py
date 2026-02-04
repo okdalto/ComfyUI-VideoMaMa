@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import List, Tuple
 
 # Import VideoMaMa components
-from pipeline_svd_mask import VideoInferencePipeline
+from .pipeline_svd_mask import VideoInferencePipeline
 
 # For automatic model downloading
 try:
