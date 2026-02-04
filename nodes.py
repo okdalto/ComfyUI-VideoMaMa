@@ -427,18 +427,33 @@ class SAM2VideoMaskGenerator:
 
             # Copy config to SAM2 package's config directory
             # This ensures Hydra can find it when build_sam2_video_predictor is called
+            # Use the actual sam2.build_sam module path to ensure we get the right location
             try:
-                import sam2
-                sam2_path = Path(sam2.__file__).parent
+                from sam2.build_sam import build_sam2_video_predictor as _temp_import
+                import sam2.build_sam
+
+                # Get the path of the actual sam2 module being used
+                sam2_build_path = Path(sam2.build_sam.__file__).parent
+                sam2_path = sam2_build_path.parent  # Go up one level to sam2 package root
+                print(f"SAM2 package location (from build_sam): {sam2_path}")
+
                 sam2_config_dest = sam2_path / "configs" / "sam2.1" / config_filename
+                print(f"Target config location: {sam2_config_dest}")
+                print(f"Local config location: {config_local_path}")
+                print(f"Config exists at target: {os.path.exists(sam2_config_dest)}")
+                print(f"Config exists locally: {os.path.exists(config_local_path)}")
 
                 if not os.path.exists(sam2_config_dest):
-                    print(f"Copying config to SAM2 package: {sam2_config_dest}")
+                    print(f"Copying config from {config_local_path} to {sam2_config_dest}")
                     os.makedirs(os.path.dirname(sam2_config_dest), exist_ok=True)
                     shutil.copy(str(config_local_path), str(sam2_config_dest))
                     print("Config copied successfully")
+                else:
+                    print("Config already exists in SAM2 package")
             except Exception as e:
                 print(f"Warning: Could not copy config to SAM2 package: {e}")
+                import traceback
+                traceback.print_exc()
                 print("Attempting to use local config...")
 
             # Initialize SAM2 video predictor
