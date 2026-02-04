@@ -33,7 +33,8 @@ def setup_sam2():
     sam2_dir = node_dir / "sam2"
 
     # Check if SAM2 is already properly installed
-    sam2_configs_dir = sam2_dir / "sam2_configs"
+    # Configs are in sam2/sam2/configs/ (inside the package)
+    sam2_configs_dir = sam2_dir / "sam2" / "configs"
     if sam2_dir.exists() and (sam2_dir / "sam2" / "__init__.py").exists() and sam2_configs_dir.exists():
         # Valid SAM2 installation, just add to path
         sam2_parent = str(sam2_dir.parent)
@@ -99,8 +100,8 @@ try:
 
     # Verify this is a valid SAM2 with configs directory
     sam2_path = Path(sam2.__file__).parent
-    # SAM2 uses sam2_configs directory (not configs)
-    sam2_configs_dir = sam2_path.parent / "sam2_configs"
+    # SAM2 has configs inside the sam2 package
+    sam2_configs_dir = sam2_path / "configs"
 
     # Check if this is comfyui-rmbg's sam2 (has no configs)
     if "comfyui-rmbg" in str(sam2_path):
@@ -117,6 +118,7 @@ try:
                 print(f"SAM2 loaded successfully from: {sam2_path}")
     elif not sam2_configs_dir.exists():
         print("WARNING: SAM2 installation missing configs directory.")
+        print(f"Looking for configs at: {sam2_configs_dir}")
         print("Attempting to install official SAM2...")
         if setup_sam2():
             # Try importing again
@@ -144,7 +146,7 @@ except ImportError:
                 SAM2_AVAILABLE = True
                 print(f"SAM2 loaded successfully from: {sam2_path}")
             else:
-                print("SAM2 downloaded but configs not found")
+                print(f"SAM2 downloaded but configs not found at {sam2_configs_dir}")
         except ImportError as e:
             print(f"Could not import SAM2 after installation: {e}")
 
@@ -419,7 +421,7 @@ class SAM2VideoMaskGenerator:
             import sam2
             sam2_path = Path(sam2.__file__).parent
             # SAM2 uses sam2_configs directory (not configs)
-            sam2_configs_dir = sam2_path.parent / "sam2_configs"
+            sam2_configs_dir = sam2_path / "configs"
 
             if not sam2_configs_dir.exists():
                 raise RuntimeError(
@@ -564,17 +566,16 @@ class SAM2VideoMaskGenerator:
 
             # Copy config to SAM2 package's config directory
             # This ensures Hydra can find it when build_sam2_video_predictor is called
-            # SAM2 uses sam2_configs directory (not configs)
+            # SAM2 has configs inside the package (sam2/configs/)
             try:
                 import sam2
 
-                # Get the actual sam2 package root (parent of sam2 module)
+                # Get the actual sam2 package location
                 sam2_module_path = Path(sam2.__file__).parent
-                sam2_root = sam2_module_path.parent
-                print(f"SAM2 root location: {sam2_root}")
+                print(f"SAM2 module location: {sam2_module_path}")
 
-                # SAM2 uses sam2_configs directory at the root level
-                sam2_config_dest = sam2_root / "sam2_configs" / "sam2.1" / config_filename
+                # SAM2 has configs inside the package directory
+                sam2_config_dest = sam2_module_path / "configs" / "sam2.1" / config_filename
                 print(f"Target config location: {sam2_config_dest}")
                 print(f"Local config location: {config_local_path}")
                 print(f"Config exists at target: {os.path.exists(sam2_config_dest)}")
