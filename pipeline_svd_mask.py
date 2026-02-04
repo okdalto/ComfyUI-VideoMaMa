@@ -844,7 +844,8 @@ class VideoInferencePipeline:
     """
 
     def __init__(self, base_model_path: str, unet_checkpoint_path: str, device: str = "cuda",
-                 weight_dtype: torch.dtype = torch.float16):
+                 weight_dtype: torch.dtype = torch.float16, enable_model_cpu_offload: bool = False,
+                 vae_encode_chunk_size: int = 8):
         """
         Loads all necessary models into memory.
 
@@ -853,10 +854,14 @@ class VideoInferencePipeline:
             unet_checkpoint_path (str): Path to the fine-tuned UNet checkpoint.
             device (str): The device to run models on ('cuda' or 'cpu').
             weight_dtype (torch.dtype): The precision for model weights (float16 or bfloat16).
+            enable_model_cpu_offload (bool): If True, models are kept on CPU and moved to GPU only when needed.
+            vae_encode_chunk_size (int): Number of frames to encode at once in VAE (lower = less memory).
         """
         print("--- Initializing Inference Pipeline and Loading Models ---")
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
         self.weight_dtype = weight_dtype
+        self.enable_model_cpu_offload = enable_model_cpu_offload
+        self.vae_encode_chunk_size = vae_encode_chunk_size
 
         # Load models from pretrained paths
         try:
@@ -869,12 +874,25 @@ class VideoInferencePipeline:
         except Exception as e:
             raise IOError(f"Fatal error loading models: {e}")
 
-        # Move models to the specified device and set to evaluation mode
-        self.image_encoder.to(self.device, dtype=self.weight_dtype).eval()
-        self.vae.to(self.device, dtype=self.weight_dtype).eval()
-        self.unet.to(self.device, dtype=self.weight_dtype).eval()
+        # Set models to evaluation mode
+        self.image_encoder.eval()
+        self.vae.eval()
+        self.unet.eval()
+
+        if self.enable_model_cpu_offload:
+            # Keep models on CPU initially, move to GPU only when needed
+            print(f"--- Model CPU Offloading ENABLED (memory optimization) ---")
+            self.image_encoder.to("cpu", dtype=self.weight_dtype)
+            self.vae.to("cpu", dtype=self.weight_dtype)
+            self.unet.to("cpu", dtype=self.weight_dtype)
+        else:
+            # Move all models to GPU
+            self.image_encoder.to(self.device, dtype=self.weight_dtype)
+            self.vae.to(self.device, dtype=self.weight_dtype)
+            self.unet.to(self.device, dtype=self.weight_dtype)
 
         print(f"--- Models Loaded Successfully on {self.device} ---")
+        print(f"--- VAE Encode Chunk Size: {self.vae_encode_chunk_size} frames ---")
 
     def run(self, cond_frames, mask_frames, seed=42, mask_cond_mode="vae", fps=7, motion_bucket_id=127,
             noise_aug_strength=0.0):
@@ -902,6 +920,9 @@ class VideoInferencePipeline:
 
         with torch.no_grad():
             # --- 2. Get CLIP Image Embeddings ---
+            if self.enable_model_cpu_offload:
+                self.image_encoder.to(self.device)
+
             first_frame_tensor = cond_video_tensor[:, 0, :, :, :]
             pixel_values_for_clip = self._resize_with_antialiasing(first_frame_tensor, (224, 224))
             pixel_values_for_clip = ((pixel_values_for_clip + 1.0) / 2.0).clamp(0, 1)
@@ -909,7 +930,14 @@ class VideoInferencePipeline:
             image_embeddings = self.image_encoder(pixel_values.to(self.device, dtype=self.weight_dtype)).image_embeds
             encoder_hidden_states = torch.zeros_like(image_embeddings).unsqueeze(1)
 
+            if self.enable_model_cpu_offload:
+                self.image_encoder.to("cpu")
+                torch.cuda.empty_cache()
+
             # --- 3. Prepare Latents ---
+            if self.enable_model_cpu_offload:
+                self.vae.to(self.device)
+
             cond_latents = self._tensor_to_vae_latent(cond_video_tensor.to(self.weight_dtype))
             cond_latents = cond_latents / self.vae.config.scaling_factor
 
@@ -926,7 +954,14 @@ class VideoInferencePipeline:
             else:
                 raise ValueError(f"Unknown mask_cond_mode: {mask_cond_mode}")
 
+            if self.enable_model_cpu_offload:
+                self.vae.to("cpu")
+                torch.cuda.empty_cache()
+
             # --- 4. Run UNet Single-Step Inference ---
+            if self.enable_model_cpu_offload:
+                self.unet.to(self.device)
+
             generator = torch.Generator(device=self.device).manual_seed(seed)
             noisy_latents = torch.randn(cond_latents.shape, generator=generator, device=self.device,
                                         dtype=self.weight_dtype)
@@ -936,15 +971,27 @@ class VideoInferencePipeline:
             unet_input = torch.cat([noisy_latents, cond_latents, mask_latents], dim=2)
             pred_latents = self.unet(unet_input, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
 
+            if self.enable_model_cpu_offload:
+                self.unet.to("cpu")
+                torch.cuda.empty_cache()
+
             # --- 5. Decode Latents to Video Frames ---
+            if self.enable_model_cpu_offload:
+                self.vae.to(self.device)
+
             pred_latents = (1 / self.vae.config.scaling_factor) * pred_latents.squeeze(0)
 
             frames = []
             # Process in chunks to avoid VRAM issues, especially for long videos
-            for i in range(0, pred_latents.shape[0], 8):
-                chunk = pred_latents[i: i + 8]
+            decode_chunk_size = min(4, pred_latents.shape[0])  # Reduced chunk size for memory optimization
+            for i in range(0, pred_latents.shape[0], decode_chunk_size):
+                chunk = pred_latents[i: i + decode_chunk_size]
                 decoded_chunk = self.vae.decode(chunk, num_frames=chunk.shape[0]).sample
                 frames.append(decoded_chunk)
+
+            if self.enable_model_cpu_offload:
+                self.vae.to("cpu")
+                torch.cuda.empty_cache()
 
             video_tensor = torch.cat(frames, dim=0)
             video_tensor = (video_tensor / 2.0 + 0.5).clamp(0, 1).mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
@@ -958,11 +1005,19 @@ class VideoInferencePipeline:
         return video_tensor * 2.0 - 1.0
 
     def _tensor_to_vae_latent(self, t: torch.Tensor):
-        """Encodes a video tensor into the VAE's latent space."""
-        video_length = t.shape[1]
+        """Encodes a video tensor into the VAE's latent space with optional chunking."""
+        batch_size, video_length = t.shape[0], t.shape[1]
         t = rearrange(t, "b f c h w -> (b f) c h w")
-        latents = self.vae.encode(t).latent_dist.sample()
-        latents = rearrange(latents, "(b f) c h w -> b f c h w", f=video_length)
+
+        # Encode in chunks to reduce memory usage
+        latents_list = []
+        for i in range(0, t.shape[0], self.vae_encode_chunk_size):
+            chunk = t[i: i + self.vae_encode_chunk_size]
+            chunk_latents = self.vae.encode(chunk).latent_dist.sample()
+            latents_list.append(chunk_latents)
+
+        latents = torch.cat(latents_list, dim=0)
+        latents = rearrange(latents, "(b f) c h w -> b f c h w", b=batch_size, f=video_length)
         return latents * self.vae.config.scaling_factor
 
     def _get_add_time_ids(self, fps, motion_bucket_id, noise_aug_strength, batch_size):

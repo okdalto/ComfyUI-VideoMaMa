@@ -171,6 +171,15 @@ class VideoMaMaPipelineLoader:
                 "precision": (["fp16", "bf16"], {
                     "default": "fp16"
                 }),
+                "enable_model_cpu_offload": ("BOOLEAN", {
+                    "default": True
+                }),
+                "vae_encode_chunk_size": ("INT", {
+                    "default": 4,
+                    "min": 1,
+                    "max": 25,
+                    "step": 1
+                }),
             }
         }
 
@@ -178,7 +187,8 @@ class VideoMaMaPipelineLoader:
     FUNCTION = "load_pipeline"
     CATEGORY = "VideoMaMa"
 
-    def load_pipeline(self, base_model_path: str, unet_checkpoint_path: str, precision: str):
+    def load_pipeline(self, base_model_path: str, unet_checkpoint_path: str, precision: str,
+                      enable_model_cpu_offload: bool, vae_encode_chunk_size: int):
         """Load the VideoMaMa inference pipeline"""
 
         weight_dtype = torch.float16 if precision == "fp16" else torch.bfloat16
@@ -246,12 +256,16 @@ class VideoMaMaPipelineLoader:
             print(f"Loading VideoMaMa pipeline...")
             print(f"  Base model: {base_model_path}")
             print(f"  UNet checkpoint: {unet_checkpoint_path}")
+            print(f"  Model CPU Offload: {enable_model_cpu_offload}")
+            print(f"  VAE Encode Chunk Size: {vae_encode_chunk_size}")
 
             pipeline = VideoInferencePipeline(
                 base_model_path=base_model_path,
                 unet_checkpoint_path=unet_checkpoint_path,
                 weight_dtype=weight_dtype,
-                device="cuda" if torch.cuda.is_available() else "cpu"
+                device="cuda" if torch.cuda.is_available() else "cpu",
+                enable_model_cpu_offload=enable_model_cpu_offload,
+                vae_encode_chunk_size=vae_encode_chunk_size
             )
 
             print(f"VideoMaMa pipeline loaded successfully with {precision} precision")
