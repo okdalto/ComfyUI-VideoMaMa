@@ -598,12 +598,17 @@ class SAM2VideoMaskGenerator:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"Loading SAM2 with config: {config_name}, checkpoint: {checkpoint_path_abs}")
 
-            # Use the config name that Hydra expects: "sam2.1/sam2.1_hiera_l" (without .yaml)
-            config_name_for_hydra = f"sam2.1/{config_filename.replace('.yaml', '')}"
-            print(f"Using Hydra config name: {config_name_for_hydra}")
+            # Use absolute path to config file instead of Hydra package resolution
+            # This avoids issues with Hydra not finding configs in pip-installed packages
+            import sam2
+            sam2_module_path = Path(sam2.__file__).parent
+            config_absolute_path = sam2_module_path / "configs" / "sam2.1" / config_filename
+
+            print(f"Using absolute config path: {config_absolute_path}")
+            print(f"Config exists: {os.path.exists(config_absolute_path)}")
 
             predictor = build_sam2_video_predictor(
-                config_file=config_name_for_hydra,
+                config_file=str(config_absolute_path),
                 ckpt_path=checkpoint_path_abs,
                 device=device
             )
