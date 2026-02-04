@@ -24,12 +24,37 @@ except ImportError:
     print("huggingface_hub not available. Auto-download disabled.")
 
 # Try to import SAM2 (optional dependency)
+# Only accept official SAM2 package (not comfyui-rmbg's version)
+SAM2_AVAILABLE = False
 try:
+    import sam2
     from sam2.build_sam import build_sam2_video_predictor
-    SAM2_AVAILABLE = True
+
+    # Verify this is the official SAM2 with configs directory
+    sam2_path = Path(sam2.__file__).parent
+    sam2_configs_dir = sam2_path / "configs"
+
+    # Check if this is comfyui-rmbg's sam2 (has no configs)
+    if "comfyui-rmbg" in str(sam2_path):
+        print("WARNING: Detected comfyui-rmbg's SAM2, which is not compatible.")
+        print("SAM2VideoMaskGenerator node will be disabled.")
+        print("Please install official SAM2:")
+        print("  git clone https://github.com/facebookresearch/sam2.git")
+        print("  cd sam2 && pip install -e .")
+    elif not sam2_configs_dir.exists():
+        print("WARNING: SAM2 installation missing configs directory.")
+        print("SAM2VideoMaskGenerator node will be disabled.")
+        print("Please install official SAM2:")
+        print("  git clone https://github.com/facebookresearch/sam2.git")
+        print("  cd sam2 && pip install -e .")
+    else:
+        SAM2_AVAILABLE = True
+        print(f"SAM2 loaded successfully from: {sam2_path}")
 except ImportError:
-    SAM2_AVAILABLE = False
     print("SAM2 not available. SAM2VideoMaskGenerator node will be disabled.")
+    print("To enable SAM2 features, install official SAM2:")
+    print("  git clone https://github.com/facebookresearch/sam2.git")
+    print("  cd sam2 && pip install -e .")
 
 
 class VideoMaMaPipelineLoader:
@@ -293,9 +318,28 @@ class SAM2VideoMaskGenerator:
 
         if not SAM2_AVAILABLE:
             raise RuntimeError(
-                "SAM2 is not available. Please install SAM2: "
-                "git clone https://github.com/facebookresearch/sam2 && cd sam2 && pip install -e ."
+                "SAM2 is not available. Please install SAM2:\n"
+                "git clone https://github.com/facebookresearch/sam2.git && cd sam2 && pip install -e ."
             )
+
+        # Check if we're using the official SAM2 package (not comfyui-rmbg's version)
+        try:
+            import sam2
+            sam2_path = Path(sam2.__file__).parent
+            sam2_configs_dir = sam2_path / "configs"
+
+            if not sam2_configs_dir.exists():
+                raise RuntimeError(
+                    f"SAM2 configs directory not found at {sam2_configs_dir}\n"
+                    f"It appears you're using a SAM2 version without configs (possibly from comfyui-rmbg).\n"
+                    f"Please install the official SAM2 package:\n"
+                    f"  git clone https://github.com/facebookresearch/sam2.git\n"
+                    f"  cd sam2\n"
+                    f"  pip install -e .\n"
+                    f"This will ensure the configs directory is properly installed."
+                )
+        except Exception as e:
+            print(f"Warning: Could not verify SAM2 installation: {e}")
 
         # Get the absolute path relative to this node's directory for checkpoint
         node_dir = Path(__file__).parent
@@ -427,15 +471,13 @@ class SAM2VideoMaskGenerator:
 
             # Copy config to SAM2 package's config directory
             # This ensures Hydra can find it when build_sam2_video_predictor is called
-            # Use the actual sam2.build_sam module path to ensure we get the right location
+            # Use the actual sam2 package directly
             try:
-                from sam2.build_sam import build_sam2_video_predictor as _temp_import
-                import sam2.build_sam
+                import sam2
 
-                # Get the path of the actual sam2 module being used
-                sam2_build_path = Path(sam2.build_sam.__file__).parent
-                sam2_path = sam2_build_path.parent  # Go up one level to sam2 package root
-                print(f"SAM2 package location (from build_sam): {sam2_path}")
+                # Get the actual sam2 package root
+                sam2_path = Path(sam2.__file__).parent
+                print(f"SAM2 package location: {sam2_path}")
 
                 sam2_config_dest = sam2_path / "configs" / "sam2.1" / config_filename
                 print(f"Target config location: {sam2_config_dest}")
