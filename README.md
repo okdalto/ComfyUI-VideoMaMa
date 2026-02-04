@@ -13,8 +13,8 @@ ComfyUI custom node implementation of VideoMaMa for video matting with mask cond
 
 ```bash
 cd /path/to/ComfyUI/custom_nodes/
-git clone <your-repo-url> VideoMaMa
-cd VideoMaMa
+git clone https://github.com/okdalto/ComfyUI-VideoMaMa
+cd ComfyUI-VideoMaMa
 pip install -r requirements.txt
 ```
 
@@ -29,13 +29,14 @@ huggingface-cli download stabilityai/stable-video-diffusion-img2vid-xt \
     --local-dir checkpoints/stabilityai/stable-video-diffusion-img2vid-xt
 ```
 
-#### VideoMaMa Checkpoint (Required)
-Place your fine-tuned VideoMaMa UNet checkpoint in:
-```
-VideoMaMa/checkpoints/VideoMaMa/unet/diffusion_pytorch_model.safetensors
-```
+#### VideoMaMa Checkpoint (Auto-download)
+The VideoMaMa UNet checkpoint will be **automatically downloaded** on first use if not present.
 
-This checkpoint is **not auto-downloaded** and must be provided by you.
+To download manually:
+```bash
+huggingface-cli download SammyLim/VideoMaMa \
+    --local-dir checkpoints/VideoMaMa
+```
 
 #### SAM2 (Optional - for mask generation)
 ```bash

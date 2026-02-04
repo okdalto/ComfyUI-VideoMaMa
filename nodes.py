@@ -215,13 +215,32 @@ class VideoMaMaPipelineLoader:
                     f"https://huggingface.co/stabilityai/stable-video-diffusion-img2vid-xt"
                 )
 
-        # Check if UNet checkpoint exists
+        # Auto-download UNet checkpoint if not exists
         if not os.path.exists(unet_checkpoint_path):
-            raise RuntimeError(
-                f"VideoMaMa UNet checkpoint not found at {unet_checkpoint_path}\n"
-                f"Please download or provide the fine-tuned VideoMaMa checkpoint.\n"
-                f"Expected structure: {unet_checkpoint_path}/unet/diffusion_pytorch_model.safetensors"
-            )
+            print(f"VideoMaMa UNet checkpoint not found at {unet_checkpoint_path}")
+            if HF_HUB_AVAILABLE:
+                print("Downloading VideoMaMa UNet checkpoint from Hugging Face...")
+                print("This may take several minutes (model size: ~3GB)...")
+                try:
+                    unet_checkpoint_path = snapshot_download(
+                        repo_id="SammyLim/VideoMaMa",
+                        local_dir=unet_checkpoint_path,
+                        local_dir_use_symlinks=False,
+                    )
+                    print(f"VideoMaMa checkpoint downloaded successfully to {unet_checkpoint_path}")
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to download VideoMaMa checkpoint: {e}\n"
+                        f"Please download manually from: "
+                        f"https://huggingface.co/SammyLim/VideoMaMa"
+                    )
+            else:
+                raise RuntimeError(
+                    f"VideoMaMa UNet checkpoint not found at {unet_checkpoint_path}\n"
+                    f"Please install huggingface_hub: pip install huggingface_hub\n"
+                    f"Or download manually from: "
+                    f"https://huggingface.co/SammyLim/VideoMaMa"
+                )
 
         try:
             print(f"Loading VideoMaMa pipeline...")
