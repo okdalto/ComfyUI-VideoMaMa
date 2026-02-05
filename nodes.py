@@ -154,7 +154,7 @@ class VideoMaMaSampler:
             }
         }
 
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = ("MASK",)
     FUNCTION = "run_inference"
     CATEGORY = "VideoMaMa"
 
@@ -206,15 +206,16 @@ class VideoMaMaSampler:
                 pbar=pbar
             )
 
-            # Convert back to ComfyUI format
-            output_images = []
+            # Convert back to ComfyUI MASK format [B, H, W]
+            output_masks = []
             for frame_pil in output_frames_pil:
                 frame_np = np.array(frame_pil).astype(np.float32) / 255.0
-                if len(frame_np.shape) == 2:
-                    frame_np = np.stack([frame_np] * 3, axis=-1)
-                output_images.append(frame_np)
+                # Convert to grayscale if RGB
+                if len(frame_np.shape) == 3:
+                    frame_np = frame_np.mean(axis=-1)
+                output_masks.append(frame_np)
 
-            output_tensor = torch.from_numpy(np.stack(output_images, axis=0))
+            output_tensor = torch.from_numpy(np.stack(output_masks, axis=0))
             print(f"VideoMaMa inference completed: {output_tensor.shape}")
             return (output_tensor,)
 
@@ -351,6 +352,12 @@ class SAM2VideoMaskGenerator:
         labels: str
     ):
         """Generate video masks using SAM2"""
+        # Convert images to numpy first to get num_frames
+        num_frames = images.shape[0]
+
+        # Create progress bar (2 + num_frames steps: prepare, load model, propagate each frame)
+        pbar = ProgressBar(2 + num_frames)
+
         # Verify SAM2 installation
         sam2, sam2_path = self._verify_sam2()
 
@@ -365,7 +372,6 @@ class SAM2VideoMaskGenerator:
         points, label_list = self._parse_points(points_x, points_y, labels)
 
         # Convert images to numpy
-        num_frames = images.shape[0]
         frames_np = [
             (images[i].cpu().numpy() * 255).astype(np.uint8)
             for i in range(num_frames)
@@ -384,6 +390,8 @@ class SAM2VideoMaskGenerator:
             for i, frame in enumerate(frames_np):
                 frame_path = frames_dir / f"{i:05d}.jpg"
                 Image.fromarray(frame).save(frame_path, quality=95)
+
+            pbar.update(1)  # Preparation complete
 
             # Initialize SAM2 predictor
             device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -410,6 +418,8 @@ class SAM2VideoMaskGenerator:
                 labels=labels_array,
             )
 
+            pbar.update(1)  # Model loading complete
+
             # Propagate through video
             masks = []
             for frame_idx, object_ids, mask_logits in predictor.propagate_in_video(inference_state):
@@ -423,6 +433,8 @@ class SAM2VideoMaskGenerator:
                 else:
                     h, w = frames_np[0].shape[:2]
                     masks.append(np.zeros((h, w), dtype=np.uint8))
+
+                pbar.update(1)  # Frame propagation complete
 
             # Convert to ComfyUI MASK format
             mask_images = [mask.astype(np.float32) / 255.0 for mask in masks]
