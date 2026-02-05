@@ -7,9 +7,8 @@ import { api } from "../../scripts/api.js";
  */
 
 class SAM2PointEditor {
-    constructor(node, imageWidget, posWidget, negWidget, labelsWidget) {
+    constructor(node, posWidget, negWidget, labelsWidget) {
         this.node = node;
-        this.imageWidget = imageWidget;
         this.posWidget = posWidget;
         this.negWidget = negWidget;
         this.labelsWidget = labelsWidget;
@@ -22,17 +21,19 @@ class SAM2PointEditor {
         this.canvas = null;
         this.ctx = null;
         this.scale = 1;
+        this.imageWidth = 0;
+        this.imageHeight = 0;
     }
 
     async open() {
         // Parse existing points
         this.parseExistingPoints();
 
-        // Create dialog
-        this.createDialog();
-
-        // Load image from node input
+        // Load image first to get dimensions
         await this.loadImageFromNode();
+
+        // Create dialog with proper size
+        this.createDialog();
 
         // Draw initial state
         this.draw();
@@ -61,11 +62,107 @@ class SAM2PointEditor {
         }
     }
 
+    async loadImageFromNode() {
+        // Method 1: Try to get image from connected node's preview
+        const imageInput = this.node.inputs?.find(i => i.name === "images");
+
+        if (imageInput && imageInput.link !== null) {
+            const linkInfo = app.graph.links[imageInput.link];
+            if (linkInfo) {
+                const sourceNode = app.graph.getNodeById(linkInfo.origin_id);
+
+                // Check if source node has preview images
+                if (sourceNode && sourceNode.imgs && sourceNode.imgs.length > 0) {
+                    return new Promise((resolve) => {
+                        this.image = new Image();
+                        this.image.crossOrigin = "anonymous";
+                        this.image.onload = () => {
+                            this.imageWidth = this.image.naturalWidth;
+                            this.imageHeight = this.image.naturalHeight;
+                            console.log("Loaded image from node preview:", this.imageWidth, "x", this.imageHeight);
+                            resolve();
+                        };
+                        this.image.onerror = () => {
+                            console.log("Failed to load from node preview");
+                            this.image = null;
+                            resolve();
+                        };
+                        this.image.src = sourceNode.imgs[0].src;
+                    });
+                }
+
+                // Method 2: Try to get image from widget (for LoadImage node)
+                if (sourceNode && sourceNode.widgets) {
+                    const imageWidget = sourceNode.widgets.find(w => w.name === "image");
+                    if (imageWidget && imageWidget.value) {
+                        const imageName = imageWidget.value;
+                        return this.loadImageFromServer(imageName);
+                    }
+                }
+            }
+        }
+
+        // Method 3: If this node has been executed, check for cached images
+        if (this.node.imgs && this.node.imgs.length > 0) {
+            return new Promise((resolve) => {
+                this.image = new Image();
+                this.image.crossOrigin = "anonymous";
+                this.image.onload = () => {
+                    this.imageWidth = this.image.naturalWidth;
+                    this.imageHeight = this.image.naturalHeight;
+                    resolve();
+                };
+                this.image.src = this.node.imgs[0].src;
+            });
+        }
+
+        // Fallback: Set default dimensions
+        this.imageWidth = 1024;
+        this.imageHeight = 576;
+        console.log("No image found, using default dimensions");
+    }
+
+    async loadImageFromServer(imageName) {
+        return new Promise((resolve) => {
+            this.image = new Image();
+            this.image.crossOrigin = "anonymous";
+            this.image.onload = () => {
+                this.imageWidth = this.image.naturalWidth;
+                this.imageHeight = this.image.naturalHeight;
+                console.log("Loaded image from server:", this.imageWidth, "x", this.imageHeight);
+                resolve();
+            };
+            this.image.onerror = () => {
+                console.log("Failed to load image from server");
+                this.image = null;
+                this.imageWidth = 1024;
+                this.imageHeight = 576;
+                resolve();
+            };
+            // ComfyUI serves uploaded images from /view endpoint
+            this.image.src = `/view?filename=${encodeURIComponent(imageName)}&type=input`;
+        });
+    }
+
     createDialog() {
         // Remove existing dialog if any
-        if (this.dialog) {
-            this.dialog.remove();
+        const existingOverlay = document.getElementById("sam2-point-editor-overlay");
+        if (existingOverlay) {
+            existingOverlay.remove();
         }
+
+        // Calculate canvas size to fit viewport while maintaining aspect ratio
+        const maxWidth = window.innerWidth * 0.85;
+        const maxHeight = window.innerHeight * 0.75;
+
+        this.scale = Math.min(
+            maxWidth / this.imageWidth,
+            maxHeight / this.imageHeight,
+            1.5  // Allow slight upscale for small images
+        );
+
+        const canvasWidth = Math.round(this.imageWidth * this.scale);
+        const canvasHeight = Math.round(this.imageHeight * this.scale);
 
         // Create overlay
         const overlay = document.createElement("div");
@@ -76,25 +173,23 @@ class SAM2PointEditor {
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.85);
             z-index: 10000;
             display: flex;
             justify-content: center;
             align-items: center;
         `;
 
-        // Create dialog container
+        // Create dialog container - size based on image
         this.dialog = document.createElement("div");
         this.dialog.id = "sam2-point-editor-dialog";
         this.dialog.style.cssText = `
             background: #2a2a2a;
             border-radius: 8px;
             padding: 20px;
-            max-width: 90vw;
-            max-height: 90vh;
             display: flex;
             flex-direction: column;
-            gap: 15px;
+            gap: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         `;
 
@@ -111,39 +206,42 @@ class SAM2PointEditor {
         const instructions = document.createElement("div");
         instructions.style.cssText = `
             color: #aaa;
-            font-size: 13px;
-            line-height: 1.5;
+            font-size: 12px;
+            line-height: 1.4;
         `;
         instructions.innerHTML = `
-            <b>Left click:</b> Add positive point (include) &nbsp;|&nbsp;
-            <b>Right click:</b> Add negative point (exclude) &nbsp;|&nbsp;
-            <b>Middle click / Ctrl+click:</b> Remove nearest point<br>
-            <b>Keyboard:</b> Press <kbd>+</kbd> for positive mode, <kbd>-</kbd> for negative mode
+            <b>Left click:</b> Add positive point (+) &nbsp;|&nbsp;
+            <b>Right click:</b> Add negative point (-) &nbsp;|&nbsp;
+            <b>Middle click / Ctrl+click:</b> Remove point
         `;
-
-        // Canvas container
-        const canvasContainer = document.createElement("div");
-        canvasContainer.style.cssText = `
-            position: relative;
-            max-width: 100%;
-            max-height: 60vh;
-            overflow: auto;
-            border: 1px solid #444;
-            border-radius: 4px;
-        `;
-
-        // Canvas
-        this.canvas = document.createElement("canvas");
-        this.canvas.style.cssText = `
-            display: block;
-            cursor: crosshair;
-        `;
-        canvasContainer.appendChild(this.canvas);
-        this.ctx = this.canvas.getContext("2d");
 
         // Mode indicator
         this.modeIndicator = document.createElement("div");
         this.updateModeIndicator();
+
+        // Canvas container with exact size
+        const canvasContainer = document.createElement("div");
+        canvasContainer.style.cssText = `
+            position: relative;
+            width: ${canvasWidth}px;
+            height: ${canvasHeight}px;
+            border: 2px solid #444;
+            border-radius: 4px;
+            overflow: hidden;
+        `;
+
+        // Canvas - exact size matching image
+        this.canvas = document.createElement("canvas");
+        this.canvas.width = canvasWidth;
+        this.canvas.height = canvasHeight;
+        this.canvas.style.cssText = `
+            display: block;
+            cursor: crosshair;
+            width: ${canvasWidth}px;
+            height: ${canvasHeight}px;
+        `;
+        canvasContainer.appendChild(this.canvas);
+        this.ctx = this.canvas.getContext("2d");
 
         // Points info
         this.pointsInfo = document.createElement("div");
@@ -220,21 +318,24 @@ class SAM2PointEditor {
         const color = this.isPositiveMode ? "#4CAF50" : "#f44336";
         const mode = this.isPositiveMode ? "Positive (+)" : "Negative (-)";
         this.modeIndicator.style.cssText = `
-            padding: 8px 15px;
+            padding: 6px 12px;
             background: ${color};
             color: white;
             border-radius: 4px;
             font-weight: bold;
             text-align: center;
+            font-size: 13px;
         `;
-        this.modeIndicator.textContent = `Current Mode: ${mode}`;
+        this.modeIndicator.textContent = `Current Mode: ${mode}  (Press + or - to switch)`;
     }
 
     updatePointsInfo() {
         if (!this.pointsInfo) return;
+        const total = this.positivePoints.length + this.negativePoints.length;
         this.pointsInfo.innerHTML = `
-            <span style="color: #4CAF50;">Positive points: ${this.positivePoints.length}</span> &nbsp;|&nbsp;
-            <span style="color: #f44336;">Negative points: ${this.negativePoints.length}</span>
+            <span style="color: #4CAF50;">Positive: ${this.positivePoints.length}</span> &nbsp;|&nbsp;
+            <span style="color: #f44336;">Negative: ${this.negativePoints.length}</span> &nbsp;|&nbsp;
+            Total: ${total} points
         `;
     }
 
@@ -257,7 +358,7 @@ class SAM2PointEditor {
         };
         document.addEventListener("keydown", this.keyHandler);
 
-        // Close on overlay click
+        // Close on overlay click (but not on dialog click)
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) {
                 this.close();
@@ -267,23 +368,28 @@ class SAM2PointEditor {
 
     handleCanvasClick(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = Math.round((e.offsetX / this.scale));
-        const y = Math.round((e.offsetY / this.scale));
+        // Convert canvas coordinates to original image coordinates
+        const x = Math.round((e.clientX - rect.left) / this.scale);
+        const y = Math.round((e.clientY - rect.top) / this.scale);
+
+        // Clamp to image bounds
+        const clampedX = Math.max(0, Math.min(x, this.imageWidth - 1));
+        const clampedY = Math.max(0, Math.min(y, this.imageHeight - 1));
 
         // Middle click or Ctrl+click = remove nearest point
         if (e.button === 1 || (e.button === 0 && e.ctrlKey)) {
-            this.removeNearestPoint(x, y);
+            this.removeNearestPoint(clampedX, clampedY);
         }
-        // Right click = negative point (or add if in negative mode)
+        // Right click = negative point
         else if (e.button === 2) {
-            this.negativePoints.push({ x, y });
+            this.negativePoints.push({ x: clampedX, y: clampedY });
         }
-        // Left click = positive point (or mode-based)
+        // Left click = based on current mode
         else if (e.button === 0) {
             if (this.isPositiveMode) {
-                this.positivePoints.push({ x, y });
+                this.positivePoints.push({ x: clampedX, y: clampedY });
             } else {
-                this.negativePoints.push({ x, y });
+                this.negativePoints.push({ x: clampedX, y: clampedY });
             }
         }
 
@@ -316,7 +422,7 @@ class SAM2PointEditor {
             }
         });
 
-        // Remove if within threshold (30 pixels)
+        // Remove if within threshold (30 pixels in original image space)
         if (minDist < 30 && nearestIdx >= 0) {
             if (isPositive) {
                 this.positivePoints.splice(nearestIdx, 1);
@@ -326,106 +432,85 @@ class SAM2PointEditor {
         }
     }
 
-    async loadImageFromNode() {
-        // Try to get image from connected node
-        const imageInput = this.node.inputs?.find(i => i.name === "images");
-
-        if (imageInput && imageInput.link !== null) {
-            const linkInfo = app.graph.links[imageInput.link];
-            if (linkInfo) {
-                const sourceNode = app.graph.getNodeById(linkInfo.origin_id);
-                if (sourceNode && sourceNode.imgs && sourceNode.imgs.length > 0) {
-                    // Use the first frame from source node
-                    return new Promise((resolve) => {
-                        this.image = new Image();
-                        this.image.onload = () => {
-                            this.setupCanvas();
-                            resolve();
-                        };
-                        this.image.src = sourceNode.imgs[0].src;
-                    });
-                }
-            }
-        }
-
-        // Fallback: create placeholder
-        this.createPlaceholderCanvas();
-    }
-
-    createPlaceholderCanvas() {
-        this.canvas.width = 512;
-        this.canvas.height = 288;
-        this.scale = 1;
-        this.ctx.fillStyle = "#333";
-        this.ctx.fillRect(0, 0, 512, 288);
-        this.ctx.fillStyle = "#888";
-        this.ctx.font = "16px Arial";
-        this.ctx.textAlign = "center";
-        this.ctx.fillText("Connect an image/video input to see preview", 256, 144);
-        this.ctx.fillText("You can still add points by clicking", 256, 170);
-    }
-
-    setupCanvas() {
-        if (!this.image) return;
-
-        // Calculate scale to fit in viewport
-        const maxWidth = window.innerWidth * 0.8;
-        const maxHeight = window.innerHeight * 0.6;
-
-        this.scale = Math.min(
-            maxWidth / this.image.width,
-            maxHeight / this.image.height,
-            1  // Don't scale up
-        );
-
-        this.canvas.width = this.image.width * this.scale;
-        this.canvas.height = this.image.height * this.scale;
-    }
-
     draw() {
         if (!this.ctx) return;
 
-        // Clear and draw image
+        // Clear canvas
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-        if (this.image) {
+        // Draw image if loaded
+        if (this.image && this.image.complete && this.image.naturalWidth > 0) {
             this.ctx.drawImage(this.image, 0, 0, this.canvas.width, this.canvas.height);
         } else {
-            this.ctx.fillStyle = "#333";
+            // Draw placeholder with grid
+            this.ctx.fillStyle = "#1a1a1a";
             this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+            // Grid pattern
+            this.ctx.strokeStyle = "#333";
+            this.ctx.lineWidth = 1;
+            const gridSize = 50;
+            for (let x = 0; x < this.canvas.width; x += gridSize) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x, 0);
+                this.ctx.lineTo(x, this.canvas.height);
+                this.ctx.stroke();
+            }
+            for (let y = 0; y < this.canvas.height; y += gridSize) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(0, y);
+                this.ctx.lineTo(this.canvas.width, y);
+                this.ctx.stroke();
+            }
+
+            // Info text
+            this.ctx.fillStyle = "#666";
+            this.ctx.font = "16px Arial";
+            this.ctx.textAlign = "center";
+            this.ctx.fillText("No image preview available", this.canvas.width / 2, this.canvas.height / 2 - 20);
+            this.ctx.fillText("Connect and execute an image source node first", this.canvas.width / 2, this.canvas.height / 2 + 10);
+            this.ctx.fillText(`Canvas: ${this.imageWidth} x ${this.imageHeight}`, this.canvas.width / 2, this.canvas.height / 2 + 40);
         }
 
         // Draw positive points (green)
-        this.positivePoints.forEach(p => {
-            this.drawPoint(p.x * this.scale, p.y * this.scale, "#4CAF50", "+");
+        this.positivePoints.forEach((p, i) => {
+            this.drawPoint(p.x * this.scale, p.y * this.scale, "#4CAF50", "+", i + 1);
         });
 
         // Draw negative points (red)
-        this.negativePoints.forEach(p => {
-            this.drawPoint(p.x * this.scale, p.y * this.scale, "#f44336", "-");
+        this.negativePoints.forEach((p, i) => {
+            this.drawPoint(p.x * this.scale, p.y * this.scale, "#f44336", "-", i + 1);
         });
     }
 
-    drawPoint(x, y, color, symbol) {
-        const radius = 12;
+    drawPoint(x, y, color, symbol, index) {
+        const radius = 14;
 
         // Outer circle with shadow
-        this.ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-        this.ctx.shadowBlur = 4;
+        this.ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetX = 2;
+        this.ctx.shadowOffsetY = 2;
+
         this.ctx.beginPath();
         this.ctx.arc(x, y, radius, 0, Math.PI * 2);
         this.ctx.fillStyle = color;
         this.ctx.fill();
+
+        // Reset shadow
+        this.ctx.shadowColor = "transparent";
         this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
 
         // White border
         this.ctx.strokeStyle = "white";
-        this.ctx.lineWidth = 2;
+        this.ctx.lineWidth = 2.5;
         this.ctx.stroke();
 
         // Symbol
         this.ctx.fillStyle = "white";
-        this.ctx.font = "bold 16px Arial";
+        this.ctx.font = "bold 18px Arial";
         this.ctx.textAlign = "center";
         this.ctx.textBaseline = "middle";
         this.ctx.fillText(symbol, x, y);
@@ -438,14 +523,14 @@ class SAM2PointEditor {
         const allLabels = [];
 
         this.positivePoints.forEach(p => {
-            allX.push(p.x);
-            allY.push(p.y);
+            allX.push(Math.round(p.x));
+            allY.push(Math.round(p.y));
             allLabels.push(1);
         });
 
         this.negativePoints.forEach(p => {
-            allX.push(p.x);
-            allY.push(p.y);
+            allX.push(Math.round(p.x));
+            allY.push(Math.round(p.y));
             allLabels.push(0);
         });
 
@@ -455,9 +540,11 @@ class SAM2PointEditor {
             this.negWidget.value = allY.join(",");
             this.labelsWidget.value = allLabels.join(",");
         } else {
-            // Default values if no points
-            this.posWidget.value = "512";
-            this.negWidget.value = "288";
+            // Default center point if no points selected
+            const defaultX = Math.round(this.imageWidth / 2);
+            const defaultY = Math.round(this.imageHeight / 2);
+            this.posWidget.value = String(defaultX);
+            this.negWidget.value = String(defaultY);
             this.labelsWidget.value = "1";
         }
 
@@ -465,6 +552,8 @@ class SAM2PointEditor {
         this.posWidget.callback?.(this.posWidget.value);
         this.negWidget.callback?.(this.negWidget.value);
         this.labelsWidget.callback?.(this.labelsWidget.value);
+
+        console.log("Saved points - X:", this.posWidget.value, "Y:", this.negWidget.value, "Labels:", this.labelsWidget.value);
     }
 
     close() {
@@ -498,11 +587,26 @@ app.registerExtension({
             const labelsWidget = this.widgets.find(w => w.name === "labels");
 
             if (posWidget && negWidget && labelsWidget) {
+                // Hide the raw coordinate widgets
+                posWidget.type = "hidden";
+                negWidget.type = "hidden";
+                labelsWidget.type = "hidden";
+
+                // Remove them from visible widgets array
+                if (posWidget.computedHeight !== undefined) {
+                    posWidget.computedHeight = 0;
+                }
+                if (negWidget.computedHeight !== undefined) {
+                    negWidget.computedHeight = 0;
+                }
+                if (labelsWidget.computedHeight !== undefined) {
+                    labelsWidget.computedHeight = 0;
+                }
+
                 // Add the "Select Points" button
                 const buttonWidget = this.addWidget("button", "Select Points", null, () => {
                     const editor = new SAM2PointEditor(
                         this,
-                        null,
                         posWidget,
                         negWidget,
                         labelsWidget
@@ -510,7 +614,7 @@ app.registerExtension({
                     editor.open();
                 });
 
-                // Style the button
+                // Style the button - make it prominent
                 buttonWidget.serialize = false;
             }
 
