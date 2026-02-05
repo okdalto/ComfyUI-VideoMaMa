@@ -91,10 +91,16 @@ class SAM2PointEditor {
                     const loaded = await this.tryLoadFromWidgets(sourceNode);
                     if (loaded) return;
                 }
+
+                // Method 4: Traverse upstream nodes to find video/image source
+                if (sourceNode) {
+                    const loaded = await this.tryLoadFromUpstreamNodes(sourceNode);
+                    if (loaded) return;
+                }
             }
         }
 
-        // Method 4: If this node has been executed, check for cached images
+        // Method 5: If this node has been executed, check for cached images
         if (this.node.imgs && this.node.imgs.length > 0) {
             const loaded = await this.tryLoadImage(this.node.imgs[0].src, "node cache");
             if (loaded) return;
@@ -157,7 +163,7 @@ class SAM2PointEditor {
     }
 
     async tryLoadFromWidgets(sourceNode) {
-        const nodeType = sourceNode.comfyClass || sourceNode.type;
+        const nodeType = sourceNode.comfyClass || sourceNode.type || "";
         console.log("Trying to load from widgets, node type:", nodeType);
 
         // LoadImage node
@@ -167,22 +173,29 @@ class SAM2PointEditor {
             if (await this.tryLoadImage(url, "LoadImage widget")) return true;
         }
 
-        // VHS LoadVideo / LoadVideoPath nodes
-        const videoWidget = sourceNode.widgets?.find(w =>
-            w.name === "video" || w.name === "video_path" || w.name === "video_file"
-        );
-        if (videoWidget && videoWidget.value) {
-            // Try to get video thumbnail/first frame
-            // VHS stores videos in input folder
-            const videoName = videoWidget.value;
+        // VHS LoadVideo / LoadVideoPath nodes - check multiple possible widget names
+        const videoWidgetNames = ["video", "video_path", "video_file", "filename", "file"];
+        for (const widgetName of videoWidgetNames) {
+            const videoWidget = sourceNode.widgets?.find(w => w.name === widgetName);
+            if (videoWidget && videoWidget.value) {
+                const videoName = videoWidget.value;
+                console.log(`Found video widget "${widgetName}":`, videoName);
 
-            // Try getting a thumbnail if server supports it
-            const thumbUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input&preview=true`;
-            if (await this.tryLoadImage(thumbUrl, "video thumbnail")) return true;
+                // VHS stores video thumbnails - try multiple approaches
+                // 1. Try VHS viewvideo endpoint (for VHS nodes)
+                if (nodeType.toLowerCase().includes("vhs") || nodeType.toLowerCase().includes("video")) {
+                    const vhsViewUrl = `/viewvideo?filename=${encodeURIComponent(videoName)}&type=input&format=image/jpeg&frame=0`;
+                    if (await this.tryLoadImage(vhsViewUrl, "VHS viewvideo")) return true;
+                }
 
-            // For VHS, try getting from pysssss preview if available
-            const vhsThumbUrl = `/vhs/get_first_frame?filename=${encodeURIComponent(videoName)}`;
-            if (await this.tryLoadImage(vhsThumbUrl, "VHS first frame")) return true;
+                // 2. Try standard view with preview flag
+                const thumbUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input&preview=true`;
+                if (await this.tryLoadImage(thumbUrl, "video thumbnail")) return true;
+
+                // 3. Try view without preview (some setups serve video frames)
+                const directUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input`;
+                if (await this.tryLoadImage(directUrl, "video direct")) return true;
+            }
         }
 
         // LoadImageFromUrl node
@@ -198,6 +211,54 @@ class SAM2PointEditor {
         if (previewWidget && previewWidget.value) {
             const url = `/view?filename=${encodeURIComponent(previewWidget.value)}&type=input`;
             if (await this.tryLoadImage(url, "preview widget")) return true;
+        }
+
+        return false;
+    }
+
+    async tryLoadFromUpstreamNodes(startNode, visited = new Set()) {
+        // Prevent infinite loops
+        if (visited.has(startNode.id)) return false;
+        visited.add(startNode.id);
+
+        console.log("Searching upstream from node:", startNode.type || startNode.comfyClass);
+
+        // Check all input connections of this node
+        if (startNode.inputs) {
+            for (const input of startNode.inputs) {
+                if (input.link === null) continue;
+
+                const linkInfo = app.graph.links[input.link];
+                if (!linkInfo) continue;
+
+                const upstreamNode = app.graph.getNodeById(linkInfo.origin_id);
+                if (!upstreamNode) continue;
+
+                const nodeType = upstreamNode.comfyClass || upstreamNode.type || "";
+                console.log("Found upstream node:", nodeType);
+
+                // Check if upstream node has preview images
+                if (upstreamNode.imgs && upstreamNode.imgs.length > 0) {
+                    const loaded = await this.tryLoadImage(upstreamNode.imgs[0].src, `upstream ${nodeType} preview`);
+                    if (loaded) return true;
+                }
+
+                // Check history for this upstream node
+                const historyLoaded = await this.tryLoadFromHistory(upstreamNode.id);
+                if (historyLoaded) return true;
+
+                // Check widgets for video/image sources
+                if (upstreamNode.widgets) {
+                    const widgetLoaded = await this.tryLoadFromWidgets(upstreamNode);
+                    if (widgetLoaded) return true;
+                }
+
+                // Recursively search further upstream (max depth via visited set)
+                if (visited.size < 10) {
+                    const recursiveLoaded = await this.tryLoadFromUpstreamNodes(upstreamNode, visited);
+                    if (recursiveLoaded) return true;
+                }
+            }
         }
 
         return false;
