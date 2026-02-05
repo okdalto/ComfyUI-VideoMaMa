@@ -127,13 +127,18 @@ class SAM2PointEditor {
 
     async tryLoadFromHistory(nodeId) {
         try {
-            const history = await api.getHistory();
-            if (!history || history.History?.length === 0) {
+            // Fetch history directly from ComfyUI API
+            const response = await fetch("/history?max_items=10");
+            if (!response.ok) return false;
+
+            const history = await response.json();
+            if (!history || Object.keys(history).length === 0) {
                 return false;
             }
 
-            // Search through history from most recent
-            for (const entry of history.History) {
+            // History is an object with prompt_id as keys
+            const entries = Object.values(history);
+            for (const entry of entries) {
                 const outputs = entry?.outputs;
                 if (!outputs || !outputs[nodeId]) continue;
 
@@ -680,13 +685,6 @@ app.registerExtension({
                 origGetExtraMenuOptions.apply(this, arguments);
             }
         };
-    },
-
-    // Inject hidden values when node is queued for execution
-    async beforeRegisterNodeDef(nodeType, nodeData, app) {
-        if (nodeData?.name !== "SAM2VideoMaskGenerator") {
-            return;
-        }
     }
 });
 
