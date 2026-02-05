@@ -181,20 +181,22 @@ class SAM2PointEditor {
                 const videoName = videoWidget.value;
                 console.log(`Found video widget "${widgetName}":`, videoName);
 
-                // VHS stores video thumbnails - try multiple approaches
-                // 1. Try VHS viewvideo endpoint (for VHS nodes)
-                if (nodeType.toLowerCase().includes("vhs") || nodeType.toLowerCase().includes("video")) {
+                // Check if this looks like a video file
+                const isVideoFile = /\.(mp4|avi|mov|mkv|webm|flv|wmv|m4v)$/i.test(videoName);
+
+                if (isVideoFile) {
+                    // 1. Try our custom VideoMaMa API endpoint first (most reliable)
+                    const videoMamaUrl = `/videomama/video_frame?filename=${encodeURIComponent(videoName)}&frame=0`;
+                    if (await this.tryLoadImage(videoMamaUrl, "VideoMaMa video_frame API")) return true;
+
+                    // 2. Try VHS viewvideo endpoint as fallback
                     const vhsViewUrl = `/viewvideo?filename=${encodeURIComponent(videoName)}&type=input&format=image/jpeg&frame=0`;
                     if (await this.tryLoadImage(vhsViewUrl, "VHS viewvideo")) return true;
+                } else {
+                    // Not a video file, try as image
+                    const imgUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input`;
+                    if (await this.tryLoadImage(imgUrl, "image file")) return true;
                 }
-
-                // 2. Try standard view with preview flag
-                const thumbUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input&preview=true`;
-                if (await this.tryLoadImage(thumbUrl, "video thumbnail")) return true;
-
-                // 3. Try view without preview (some setups serve video frames)
-                const directUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input`;
-                if (await this.tryLoadImage(directUrl, "video direct")) return true;
             }
         }
 
