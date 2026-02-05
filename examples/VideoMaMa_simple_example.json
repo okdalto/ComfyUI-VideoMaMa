@@ -1,0 +1,596 @@
+{
+  "id": "d797cbb7-9e2e-4b30-b2f5-9458666ff25d",
+  "revision": 0,
+  "last_node_id": 32,
+  "last_link_id": 47,
+  "nodes": [
+    {
+      "id": 20,
+      "type": "VideoMaMaPipelineLoader",
+      "pos": [
+        2658.703005739787,
+        610.6617269407021
+      ],
+      "size": [
+        288.53515625,
+        154
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VIDEOMAMA_PIPELINE",
+          "type": "VIDEOMAMA_PIPELINE",
+          "links": [
+            31
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-VideoMaMa",
+        "ver": "bb6ad06aab8ec947892f0b9207f01deb93f61720",
+        "Node name for S&R": "VideoMaMaPipelineLoader",
+        "aux_id": "okdalto/ComfyUI-VideoMaMa"
+      },
+      "widgets_values": [
+        "checkpoints/stabilityai/stable-video-diffusion-img2vid-xt",
+        "checkpoints/VideoMaMa",
+        "fp16",
+        true,
+        4
+      ]
+    },
+    {
+      "id": 24,
+      "type": "VideoMaMaSampler",
+      "pos": [
+        2972.5049919902194,
+        614.5309876466143
+      ],
+      "size": [
+        273.705078125,
+        218
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "pipeline",
+          "type": "VIDEOMAMA_PIPELINE",
+          "link": 31
+        },
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 30
+        },
+        {
+          "name": "masks",
+          "type": "MASK",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            38
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-VideoMaMa",
+        "ver": "89c0eb6862ca89f07da8b0da6a17c846f196f084",
+        "Node name for S&R": "VideoMaMaSampler",
+        "aux_id": "okdalto/ComfyUI-VideoMaMa"
+      },
+      "widgets_values": [
+        5116786946371,
+        "randomize",
+        "vae",
+        7,
+        127,
+        0
+      ]
+    },
+    {
+      "id": 27,
+      "type": "MaskToImage",
+      "pos": [
+        3019.1610468132963,
+        891.1299001423013
+      ],
+      "size": [
+        193.2779296875,
+        26
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 38
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            40
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.6.0",
+        "Node name for S&R": "MaskToImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 29,
+      "type": "CreateVideo",
+      "pos": [
+        2982.448895912132,
+        983.8959639130481
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 40
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": 47
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            41
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.6.0",
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        30
+      ]
+    },
+    {
+      "id": 14,
+      "type": "SaveVideo",
+      "pos": [
+        2977.289745258372,
+        1140.0791099810426
+      ],
+      "size": [
+        270,
+        368
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 41
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0"
+      },
+      "widgets_values": [
+        "video/ComfyUI",
+        "auto",
+        "auto"
+      ]
+    },
+    {
+      "id": 21,
+      "type": "MaskToImage",
+      "pos": [
+        2723.099355799572,
+        998.3747597931515
+      ],
+      "size": [
+        193.2779296875,
+        26
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 43
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            26
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.6.0",
+        "Node name for S&R": "MaskToImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 12,
+      "type": "CreateVideo",
+      "pos": [
+        2662.5198840197513,
+        1087.7327406977906
+      ],
+      "size": [
+        270,
+        78
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 26
+        },
+        {
+          "name": "audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "widget": {
+            "name": "fps"
+          },
+          "link": 14
+        }
+      ],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "CreateVideo"
+      },
+      "widgets_values": [
+        30
+      ]
+    },
+    {
+      "id": 13,
+      "type": "SaveVideo",
+      "pos": [
+        2654.654607292969,
+        1223.1434106941513
+      ],
+      "size": [
+        270,
+        368
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 15
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0"
+      },
+      "widgets_values": [
+        "video/ComfyUI",
+        "auto",
+        "auto"
+      ]
+    },
+    {
+      "id": 18,
+      "type": "GetVideoComponents",
+      "pos": [
+        2323.792165897382,
+        742.2755517372545
+      ],
+      "size": [
+        193.530859375,
+        66
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "video",
+          "type": "VIDEO",
+          "link": 19
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            30,
+            42
+          ]
+        },
+        {
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        },
+        {
+          "name": "fps",
+          "type": "FLOAT",
+          "links": [
+            14,
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "GetVideoComponents"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 16,
+      "type": "LoadVideo",
+      "pos": [
+        1900.676213072558,
+        736.2485943677589
+      ],
+      "size": [
+        386.798828125,
+        460.79882812500006
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VIDEO",
+          "type": "VIDEO",
+          "links": [
+            19
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.7.0",
+        "Node name for S&R": "LoadVideo"
+      },
+      "widgets_values": [
+        "videomamatest.mp4",
+        "image"
+      ]
+    },
+    {
+      "id": 30,
+      "type": "SAM2VideoMaskGenerator",
+      "pos": [
+        2652.574354417413,
+        828.6735399189571
+      ],
+      "size": [
+        291.5796875,
+        106
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 42
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            43,
+            44
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-VideoMaMa",
+        "ver": "b15acfc820de2010e92eb95e4f12c4fce5ea4195",
+        "Node name for S&R": "SAM2VideoMaskGenerator"
+      },
+      "widgets_values": [
+        "checkpoints/sam2/sam2.1_hiera_large.pt",
+        "configs/sam2.1/sam2.1_hiera_l.yaml"
+      ],
+      "sam2PointData": {
+        "points_x": "505,749,267,694,329,534,688,471,161,935,264,814,818,967,95,273",
+        "points_y": "176,267,312,220,248,836,836,939,568,543,159,155,440,858,743,481",
+        "labels": "1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0"
+      }
+    }
+  ],
+  "links": [
+    [
+      14,
+      18,
+      2,
+      12,
+      2,
+      "FLOAT"
+    ],
+    [
+      15,
+      12,
+      0,
+      13,
+      0,
+      "VIDEO"
+    ],
+    [
+      19,
+      16,
+      0,
+      18,
+      0,
+      "VIDEO"
+    ],
+    [
+      26,
+      21,
+      0,
+      12,
+      0,
+      "IMAGE"
+    ],
+    [
+      30,
+      18,
+      0,
+      24,
+      1,
+      "IMAGE"
+    ],
+    [
+      31,
+      20,
+      0,
+      24,
+      0,
+      "VIDEOMAMA_PIPELINE"
+    ],
+    [
+      38,
+      24,
+      0,
+      27,
+      0,
+      "MASK"
+    ],
+    [
+      40,
+      27,
+      0,
+      29,
+      0,
+      "IMAGE"
+    ],
+    [
+      41,
+      29,
+      0,
+      14,
+      0,
+      "VIDEO"
+    ],
+    [
+      42,
+      18,
+      0,
+      30,
+      0,
+      "IMAGE"
+    ],
+    [
+      43,
+      30,
+      0,
+      21,
+      0,
+      "MASK"
+    ],
+    [
+      44,
+      30,
+      0,
+      24,
+      2,
+      "MASK"
+    ],
+    [
+      47,
+      18,
+      2,
+      29,
+      2,
+      "FLOAT"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.7087373402228617,
+      "offset": [
+        -1600.6433857498864,
+        -359.4144152566682
+      ]
+    },
+    "workflowRendererVersion": "LG",
+    "frontendVersion": "1.35.9"
+  },
+  "version": 0.4
+}

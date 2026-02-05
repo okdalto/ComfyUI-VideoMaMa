@@ -2,6 +2,8 @@
 
 ComfyUI custom node implementation of VideoMaMa for video matting with mask conditioning.
 
+![VideoMaMa Workflow](assets/workflow.png)
+
 > **Original Research:** [VideoMaMa: Mask-Guided Video Matting via Generative Prior](https://arxiv.org/abs/2601.14255)
 > **Original Repository:** [cvlab-kaist/VideoMaMa](https://github.com/cvlab-kaist/VideoMaMa)
 >
@@ -95,15 +97,34 @@ Generates masks using SAM2 video tracking (requires SAM2 installation).
 - `images`: Input video frames
 - `checkpoint_path`: SAM2 checkpoint path
 - `config_file`: SAM2 config path
-- `points_x`: X coordinates, comma-separated (e.g., "512,600")
-- `points_y`: Y coordinates, comma-separated (e.g., "288,300")
-- `labels`: Point labels, 1=foreground, 0=background (e.g., "1,1")
+- `user_input`: Point coordinates from SAM2 Point Selector UI
 
 **Outputs:**
 - `IMAGE`: Generated mask frames
 
+#### SAM2 Point Selector UI
+
+Click the `user_input` field to open the interactive point selector:
+
+![SAM2 Point Selector](assets/points.png)
+
+**Controls:**
+- **Left click**: Add positive point (+) - marks foreground/object to segment
+- **Right click**: Add negative point (-) - marks background to exclude
+- **Middle click / Ctrl+click**: Remove existing point
+- **+ / - keys**: Switch between positive and negative mode
+
+**Usage Tips:**
+- Place positive points (green) on the object you want to extract
+- Place negative points (red) on background areas to exclude
+- More points = more accurate segmentation
+- Click **Save** to confirm, **Cancel** to discard, **Clear All** to reset
+
 ## Example Workflow
 
+Example workflow files are available in the [`examples/`](examples/) folder. Import these directly into ComfyUI to get started quickly.
+
+**Basic Steps:**
 1. **Load video** → Use VHS Video Loader or similar
 2. **Generate masks** → Use SAM2 node or load existing masks
 3. **Load pipeline** → VideoMaMa Pipeline Loader
