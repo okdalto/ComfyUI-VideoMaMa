@@ -7,11 +7,8 @@ import { api } from "../../scripts/api.js";
  */
 
 class SAM2PointEditor {
-    constructor(node, posWidget, negWidget, labelsWidget) {
+    constructor(node) {
         this.node = node;
-        this.posWidget = posWidget;
-        this.negWidget = negWidget;
-        this.labelsWidget = labelsWidget;
 
         this.positivePoints = [];
         this.negativePoints = [];
@@ -26,7 +23,7 @@ class SAM2PointEditor {
     }
 
     async open() {
-        // Parse existing points
+        // Parse existing points from node's stored data
         this.parseExistingPoints();
 
         // Load image first to get dimensions
@@ -41,9 +38,16 @@ class SAM2PointEditor {
 
     parseExistingPoints() {
         try {
-            const xCoords = this.posWidget.value.split(",").map(x => parseInt(x.trim())).filter(x => !isNaN(x));
-            const yCoords = this.negWidget.value.split(",").map(y => parseInt(y.trim())).filter(y => !isNaN(y));
-            const labels = this.labelsWidget.value.split(",").map(l => parseInt(l.trim())).filter(l => !isNaN(l));
+            // Get stored point data from node
+            const pointData = this.node.sam2PointData || {
+                points_x: "512",
+                points_y: "288",
+                labels: "1"
+            };
+
+            const xCoords = pointData.points_x.split(",").map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+            const yCoords = pointData.points_y.split(",").map(y => parseInt(y.trim())).filter(y => !isNaN(y));
+            const labels = pointData.labels.split(",").map(l => parseInt(l.trim())).filter(l => !isNaN(l));
 
             this.positivePoints = [];
             this.negativePoints = [];
@@ -534,26 +538,25 @@ class SAM2PointEditor {
             allLabels.push(0);
         });
 
-        // Update node widgets
+        // Store point data in node for serialization
         if (allX.length > 0) {
-            this.posWidget.value = allX.join(",");
-            this.negWidget.value = allY.join(",");
-            this.labelsWidget.value = allLabels.join(",");
+            this.node.sam2PointData = {
+                points_x: allX.join(","),
+                points_y: allY.join(","),
+                labels: allLabels.join(",")
+            };
         } else {
             // Default center point if no points selected
             const defaultX = Math.round(this.imageWidth / 2);
             const defaultY = Math.round(this.imageHeight / 2);
-            this.posWidget.value = String(defaultX);
-            this.negWidget.value = String(defaultY);
-            this.labelsWidget.value = "1";
+            this.node.sam2PointData = {
+                points_x: String(defaultX),
+                points_y: String(defaultY),
+                labels: "1"
+            };
         }
 
-        // Trigger widget callbacks if any
-        this.posWidget.callback?.(this.posWidget.value);
-        this.negWidget.callback?.(this.negWidget.value);
-        this.labelsWidget.callback?.(this.labelsWidget.value);
-
-        console.log("Saved points - X:", this.posWidget.value, "Y:", this.negWidget.value, "Labels:", this.labelsWidget.value);
+        console.log("Saved points:", this.node.sam2PointData);
     }
 
     close() {
@@ -581,44 +584,83 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = async function() {
             const ret = onNodeCreated?.apply(this, arguments);
 
-            // Find the coordinate widgets
-            const posWidget = this.widgets.find(w => w.name === "points_x");
-            const negWidget = this.widgets.find(w => w.name === "points_y");
-            const labelsWidget = this.widgets.find(w => w.name === "labels");
+            // Initialize point data with defaults
+            this.sam2PointData = {
+                points_x: "512",
+                points_y: "288",
+                labels: "1"
+            };
 
-            if (posWidget && negWidget && labelsWidget) {
-                // Hide the raw coordinate widgets
-                posWidget.type = "hidden";
-                negWidget.type = "hidden";
-                labelsWidget.type = "hidden";
-
-                // Remove them from visible widgets array
-                if (posWidget.computedHeight !== undefined) {
-                    posWidget.computedHeight = 0;
-                }
-                if (negWidget.computedHeight !== undefined) {
-                    negWidget.computedHeight = 0;
-                }
-                if (labelsWidget.computedHeight !== undefined) {
-                    labelsWidget.computedHeight = 0;
-                }
-
-                // Add the "Select Points" button
-                const buttonWidget = this.addWidget("button", "Select Points", null, () => {
-                    const editor = new SAM2PointEditor(
-                        this,
-                        posWidget,
-                        negWidget,
-                        labelsWidget
-                    );
-                    editor.open();
-                });
-
-                // Style the button - make it prominent
-                buttonWidget.serialize = false;
-            }
+            // Add the "Select Points" button
+            const buttonWidget = this.addWidget("button", "Select Points", null, () => {
+                const editor = new SAM2PointEditor(this);
+                editor.open();
+            });
+            buttonWidget.serialize = false;
 
             return ret;
         };
+
+        // Override serialization to include point data
+        const onSerialize = nodeType.prototype.onSerialize;
+        nodeType.prototype.onSerialize = function(o) {
+            if (onSerialize) {
+                onSerialize.apply(this, arguments);
+            }
+            // Store point data in serialized output
+            o.sam2PointData = this.sam2PointData;
+        };
+
+        // Override deserialization to restore point data
+        const onConfigure = nodeType.prototype.onConfigure;
+        nodeType.prototype.onConfigure = function(o) {
+            if (onConfigure) {
+                onConfigure.apply(this, arguments);
+            }
+            // Restore point data from serialized data
+            if (o.sam2PointData) {
+                this.sam2PointData = o.sam2PointData;
+            }
+        };
+
+        // Override getExtraMenuOptions to add point data to execution
+        const origGetExtraMenuOptions = nodeType.prototype.getExtraMenuOptions;
+        nodeType.prototype.getExtraMenuOptions = function(_, options) {
+            if (origGetExtraMenuOptions) {
+                origGetExtraMenuOptions.apply(this, arguments);
+            }
+        };
+    },
+
+    // Inject hidden values when node is queued for execution
+    async beforeRegisterNodeDef(nodeType, nodeData, app) {
+        if (nodeData?.name !== "SAM2VideoMaskGenerator") {
+            return;
+        }
     }
 });
+
+// Hook into the prompt serialization to inject point data
+const originalQueuePrompt = api.queuePrompt;
+api.queuePrompt = async function(number, { output, workflow }) {
+    // Find SAM2VideoMaskGenerator nodes and inject point data
+    for (const nodeId in output) {
+        const nodeData = output[nodeId];
+        if (nodeData.class_type === "SAM2VideoMaskGenerator") {
+            // Get the node from the graph
+            const node = app.graph.getNodeById(parseInt(nodeId));
+            if (node && node.sam2PointData) {
+                // Inject point data into the node's inputs
+                nodeData.inputs.points_x = node.sam2PointData.points_x;
+                nodeData.inputs.points_y = node.sam2PointData.points_y;
+                nodeData.inputs.labels = node.sam2PointData.labels;
+            } else {
+                // Use defaults
+                nodeData.inputs.points_x = "512";
+                nodeData.inputs.points_y = "288";
+                nodeData.inputs.labels = "1";
+            }
+        }
+    }
+    return originalQueuePrompt.call(this, number, { output, workflow });
+};

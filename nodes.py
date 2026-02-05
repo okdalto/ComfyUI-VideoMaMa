@@ -242,18 +242,11 @@ class SAM2VideoMaskGenerator:
                     "default": "configs/sam2.1/sam2.1_hiera_l.yaml",
                     "multiline": False
                 }),
-                "points_x": ("STRING", {
-                    "default": "512",
-                    "multiline": False
-                }),
-                "points_y": ("STRING", {
-                    "default": "288",
-                    "multiline": False
-                }),
-                "labels": ("STRING", {
-                    "default": "1",
-                    "multiline": False
-                }),
+            },
+            "hidden": {
+                "points_x": ("STRING", {"default": "512"}),
+                "points_y": ("STRING", {"default": "288"}),
+                "labels": ("STRING", {"default": "1"}),
             }
         }
 
