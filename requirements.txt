@@ -1,23 +1,30 @@
 # VideoMaMa ComfyUI Custom Node Requirements
 
-# Core dependencies
+# Core deep learning
 torch>=2.0.0
 torchvision>=0.15.0
+
+# Data processing
 numpy>=1.23.0
 Pillow>=9.0.0
 
-# Diffusers and Transformers
+# Hugging Face ecosystem
 diffusers>=0.24.0
 transformers>=4.30.0
 accelerate>=0.20.0
-
-# Model downloading
 huggingface_hub>=0.19.0
+safetensors>=0.3.0
 
-# Additional utilities
-opencv-python>=4.8.0
-tqdm>=4.65.0
+# Tensor operations
 einops>=0.6.0
 
-# Optional: SAM2 for mask generation
-# Install separately: git clone https://github.com/facebookresearch/sam2 && cd sam2 && pip install -e .
+# Progress display
+tqdm>=4.65.0
+
+# Optional: Video processing (may be needed by some components)
+# opencv-python>=4.8.0
+
+# Optional: SAM2 for video mask generation
+# Install separately:
+#   git clone https://github.com/facebookresearch/sam2
+#   cd sam2 && pip install -e .
