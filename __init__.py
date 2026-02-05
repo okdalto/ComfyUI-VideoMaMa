@@ -11,4 +11,7 @@ Then restart ComfyUI and the nodes will appear under the "VideoMaMa" category.
 
 from .nodes import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS
 
-__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS']
+# Web directory for custom frontend widgets
+WEB_DIRECTORY = "./web/js"
+
+__all__ = ['NODE_CLASS_MAPPINGS', 'NODE_DISPLAY_NAME_MAPPINGS', 'WEB_DIRECTORY']
