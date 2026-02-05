@@ -67,7 +67,6 @@ class SAM2PointEditor {
     }
 
     async loadImageFromNode() {
-        // Method 1: Try to get image from connected node's preview
         const imageInput = this.node.inputs?.find(i => i.name === "images");
 
         if (imageInput && imageInput.link !== null) {
@@ -75,49 +74,30 @@ class SAM2PointEditor {
             if (linkInfo) {
                 const sourceNode = app.graph.getNodeById(linkInfo.origin_id);
 
-                // Check if source node has preview images
+                // Method 1: Try to get image from connected node's preview (after execution)
                 if (sourceNode && sourceNode.imgs && sourceNode.imgs.length > 0) {
-                    return new Promise((resolve) => {
-                        this.image = new Image();
-                        this.image.crossOrigin = "anonymous";
-                        this.image.onload = () => {
-                            this.imageWidth = this.image.naturalWidth;
-                            this.imageHeight = this.image.naturalHeight;
-                            console.log("Loaded image from node preview:", this.imageWidth, "x", this.imageHeight);
-                            resolve();
-                        };
-                        this.image.onerror = () => {
-                            console.log("Failed to load from node preview");
-                            this.image = null;
-                            resolve();
-                        };
-                        this.image.src = sourceNode.imgs[0].src;
-                    });
+                    const loaded = await this.tryLoadImage(sourceNode.imgs[0].src, "node preview");
+                    if (loaded) return;
                 }
 
-                // Method 2: Try to get image from widget (for LoadImage node)
+                // Method 2: Try to get image from history API (previous execution results)
+                if (sourceNode) {
+                    const loaded = await this.tryLoadFromHistory(sourceNode.id);
+                    if (loaded) return;
+                }
+
+                // Method 3: Try to get image from source node's widgets (LoadImage, VHS LoadVideo, etc.)
                 if (sourceNode && sourceNode.widgets) {
-                    const imageWidget = sourceNode.widgets.find(w => w.name === "image");
-                    if (imageWidget && imageWidget.value) {
-                        const imageName = imageWidget.value;
-                        return this.loadImageFromServer(imageName);
-                    }
+                    const loaded = await this.tryLoadFromWidgets(sourceNode);
+                    if (loaded) return;
                 }
             }
         }
 
-        // Method 3: If this node has been executed, check for cached images
+        // Method 4: If this node has been executed, check for cached images
         if (this.node.imgs && this.node.imgs.length > 0) {
-            return new Promise((resolve) => {
-                this.image = new Image();
-                this.image.crossOrigin = "anonymous";
-                this.image.onload = () => {
-                    this.imageWidth = this.image.naturalWidth;
-                    this.imageHeight = this.image.naturalHeight;
-                    resolve();
-                };
-                this.image.src = this.node.imgs[0].src;
-            });
+            const loaded = await this.tryLoadImage(this.node.imgs[0].src, "node cache");
+            if (loaded) return;
         }
 
         // Fallback: Set default dimensions
@@ -126,26 +106,96 @@ class SAM2PointEditor {
         console.log("No image found, using default dimensions");
     }
 
-    async loadImageFromServer(imageName) {
+    async tryLoadImage(src, source) {
         return new Promise((resolve) => {
             this.image = new Image();
             this.image.crossOrigin = "anonymous";
             this.image.onload = () => {
                 this.imageWidth = this.image.naturalWidth;
                 this.imageHeight = this.image.naturalHeight;
-                console.log("Loaded image from server:", this.imageWidth, "x", this.imageHeight);
-                resolve();
+                console.log(`Loaded image from ${source}:`, this.imageWidth, "x", this.imageHeight);
+                resolve(true);
             };
             this.image.onerror = () => {
-                console.log("Failed to load image from server");
+                console.log(`Failed to load from ${source}`);
                 this.image = null;
-                this.imageWidth = 1024;
-                this.imageHeight = 576;
-                resolve();
+                resolve(false);
             };
-            // ComfyUI serves uploaded images from /view endpoint
-            this.image.src = `/view?filename=${encodeURIComponent(imageName)}&type=input`;
+            this.image.src = src;
         });
+    }
+
+    async tryLoadFromHistory(nodeId) {
+        try {
+            const history = await api.getHistory();
+            if (!history || history.History?.length === 0) {
+                return false;
+            }
+
+            // Search through history from most recent
+            for (const entry of history.History) {
+                const outputs = entry?.outputs;
+                if (!outputs || !outputs[nodeId]) continue;
+
+                const nodeOutput = outputs[nodeId];
+                // Look for images in the output
+                if (nodeOutput.images && nodeOutput.images.length > 0) {
+                    const imageInfo = nodeOutput.images[0];
+                    const url = `/view?filename=${encodeURIComponent(imageInfo.filename)}&subfolder=${encodeURIComponent(imageInfo.subfolder || "")}&type=${imageInfo.type || "output"}`;
+                    return await this.tryLoadImage(url, "history API");
+                }
+            }
+        } catch (e) {
+            console.log("Failed to load from history:", e);
+        }
+        return false;
+    }
+
+    async tryLoadFromWidgets(sourceNode) {
+        const nodeType = sourceNode.comfyClass || sourceNode.type;
+        console.log("Trying to load from widgets, node type:", nodeType);
+
+        // LoadImage node
+        const imageWidget = sourceNode.widgets?.find(w => w.name === "image");
+        if (imageWidget && imageWidget.value) {
+            const url = `/view?filename=${encodeURIComponent(imageWidget.value)}&type=input`;
+            if (await this.tryLoadImage(url, "LoadImage widget")) return true;
+        }
+
+        // VHS LoadVideo / LoadVideoPath nodes
+        const videoWidget = sourceNode.widgets?.find(w =>
+            w.name === "video" || w.name === "video_path" || w.name === "video_file"
+        );
+        if (videoWidget && videoWidget.value) {
+            // Try to get video thumbnail/first frame
+            // VHS stores videos in input folder
+            const videoName = videoWidget.value;
+
+            // Try getting a thumbnail if server supports it
+            const thumbUrl = `/view?filename=${encodeURIComponent(videoName)}&type=input&preview=true`;
+            if (await this.tryLoadImage(thumbUrl, "video thumbnail")) return true;
+
+            // For VHS, try getting from pysssss preview if available
+            const vhsThumbUrl = `/vhs/get_first_frame?filename=${encodeURIComponent(videoName)}`;
+            if (await this.tryLoadImage(vhsThumbUrl, "VHS first frame")) return true;
+        }
+
+        // LoadImageFromUrl node
+        const urlWidget = sourceNode.widgets?.find(w => w.name === "url");
+        if (urlWidget && urlWidget.value) {
+            if (await this.tryLoadImage(urlWidget.value, "URL widget")) return true;
+        }
+
+        // Check for any preview_image or first_frame widget
+        const previewWidget = sourceNode.widgets?.find(w =>
+            w.name === "preview_image" || w.name === "first_frame" || w.name === "thumbnail"
+        );
+        if (previewWidget && previewWidget.value) {
+            const url = `/view?filename=${encodeURIComponent(previewWidget.value)}&type=input`;
+            if (await this.tryLoadImage(url, "preview widget")) return true;
+        }
+
+        return false;
     }
 
     createDialog() {
