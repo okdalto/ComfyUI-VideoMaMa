@@ -11,6 +11,7 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import List
+from comfy.utils import ProgressBar
 
 # Import VideoMaMa components
 from .pipeline_svd_mask import VideoInferencePipeline
@@ -113,7 +114,7 @@ class VideoMaMaPipelineLoader:
             raise RuntimeError(f"Failed to load VideoMaMa pipeline: {e}")
 
 
-class VideoMaMaRun:
+class VideoMaMaSampler:
     """
     Runs VideoMaMa inference on video frames with mask conditioning.
     Expects ComfyUI IMAGE format: [B, H, W, C] tensors with values in [0, 1].
@@ -190,6 +191,9 @@ class VideoMaMaRun:
 
         print(f"Running VideoMaMa inference on {num_frames} frames...")
 
+        # Create progress bar for ComfyUI (4 steps: CLIP encode, VAE encode, UNet, VAE decode)
+        pbar = ProgressBar(4)
+
         try:
             output_frames_pil = pipeline.run(
                 cond_frames=cond_frames,
@@ -198,7 +202,8 @@ class VideoMaMaRun:
                 mask_cond_mode=mask_cond_mode,
                 fps=fps,
                 motion_bucket_id=motion_bucket_id,
-                noise_aug_strength=noise_aug_strength
+                noise_aug_strength=noise_aug_strength,
+                pbar=pbar
             )
 
             # Convert back to ComfyUI format
@@ -436,12 +441,12 @@ class SAM2VideoMaskGenerator:
 # Node class mappings
 NODE_CLASS_MAPPINGS = {
     "VideoMaMaPipelineLoader": VideoMaMaPipelineLoader,
-    "VideoMaMaRun": VideoMaMaRun,
+    "VideoMaMaSampler": VideoMaMaSampler,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "VideoMaMaPipelineLoader": "VideoMaMa Pipeline Loader",
-    "VideoMaMaRun": "VideoMaMa Run",
+    "VideoMaMaSampler": "VideoMaMa Sampler",
 }
 
 # Add SAM2 node if available

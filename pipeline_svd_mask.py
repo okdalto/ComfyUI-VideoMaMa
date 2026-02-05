@@ -895,7 +895,7 @@ class VideoInferencePipeline:
         print(f"--- VAE Encode Chunk Size: {self.vae_encode_chunk_size} frames ---")
 
     def run(self, cond_frames, mask_frames, seed=42, mask_cond_mode="vae", fps=7, motion_bucket_id=127,
-            noise_aug_strength=0.0):
+            noise_aug_strength=0.0, pbar=None):
         """
         Runs the core inference process on a sequence of conditioning and mask frames.
 
@@ -907,6 +907,7 @@ class VideoInferencePipeline:
             fps (int): Frames per second to condition the model with.
             motion_bucket_id (int): Motion bucket ID for conditioning.
             noise_aug_strength (float): Noise augmentation strength.
+            pbar: Optional ComfyUI ProgressBar for progress tracking.
 
         Returns:
             list[Image.Image]: A list of the generated video frames as PIL Images.
@@ -934,6 +935,9 @@ class VideoInferencePipeline:
                 self.image_encoder.to("cpu")
                 torch.cuda.empty_cache()
 
+            if pbar is not None:
+                pbar.update(1)
+
             # --- 3. Prepare Latents ---
             if self.enable_model_cpu_offload:
                 self.vae.to(self.device)
@@ -958,6 +962,9 @@ class VideoInferencePipeline:
                 self.vae.to("cpu")
                 torch.cuda.empty_cache()
 
+            if pbar is not None:
+                pbar.update(1)
+
             # --- 4. Run UNet Single-Step Inference ---
             if self.enable_model_cpu_offload:
                 self.unet.to(self.device)
@@ -974,6 +981,9 @@ class VideoInferencePipeline:
             if self.enable_model_cpu_offload:
                 self.unet.to("cpu")
                 torch.cuda.empty_cache()
+
+            if pbar is not None:
+                pbar.update(1)
 
             # --- 5. Decode Latents to Video Frames ---
             if self.enable_model_cpu_offload:
@@ -992,6 +1002,9 @@ class VideoInferencePipeline:
             if self.enable_model_cpu_offload:
                 self.vae.to("cpu")
                 torch.cuda.empty_cache()
+
+            if pbar is not None:
+                pbar.update(1)
 
             video_tensor = torch.cat(frames, dim=0)
             video_tensor = (video_tensor / 2.0 + 0.5).clamp(0, 1).mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
