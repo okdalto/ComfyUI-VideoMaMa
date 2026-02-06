@@ -301,23 +301,8 @@ class StableVideoDiffusionPipelineWithMask(DiffusionPipeline):
         conditional_latents = self._encode_video_vae(image_tensor, device)
         conditional_latents = conditional_latents / self.vae.config.scaling_factor
 
-        if self.unet.config.in_channels == 12:
-            mask_latents = self._encode_video_vae(mask_tensor, device)
-            mask_latents = mask_latents / self.vae.config.scaling_factor
-        elif self.unet.config.in_channels == 9:
-            mask_tensor_gray = mask_tensor.mean(dim=2, keepdim=True)
-            binarized_mask = (mask_tensor_gray > 0.0).to(dtype)
-            b, f, c, h, w = binarized_mask.shape
-            binarized_mask_reshaped = binarized_mask.reshape(b * f, c, h, w)
-            target_size = (height // self.vae_scale_factor, width // self.vae_scale_factor)
-            interpolated_mask = F.interpolate(
-                binarized_mask_reshaped,
-                size=target_size,
-                mode='nearest',
-            )
-            mask_latents = interpolated_mask.reshape(b, f, *interpolated_mask.shape[1:])
-        else:
-            raise ValueError(f"Unsupported number of UNet input channels: {self.unet.config.in_channels}.")
+        mask_latents = self._encode_video_vae(mask_tensor, device)
+        mask_latents = mask_latents / self.vae.config.scaling_factor
 
         if mask_noise_strength > 0.0:
             mask_noise = randn_tensor(mask_latents.shape, generator=generator, device=device, dtype=dtype)
@@ -616,26 +601,8 @@ class StableVideoDiffusionPipelineOnestepWithMask(DiffusionPipeline):
         conditional_latents = self._encode_video_vae(image_tensor, device)
         conditional_latents = conditional_latents / self.vae.config.scaling_factor
 
-        if self.unet.config.in_channels == 12:
-            mask_latents = self._encode_video_vae(mask_tensor, device)
-            mask_latents = mask_latents / self.vae.config.scaling_factor
-        elif self.unet.config.in_channels == 9:
-            mask_tensor_gray = mask_tensor.mean(dim=2, keepdim=True)
-            binarized_mask = (mask_tensor_gray > 0.0).to(dtype)
-            b, f, c, h, w = binarized_mask.shape
-            binarized_mask_reshaped = binarized_mask.reshape(b * f, c, h, w)
-            target_size = (height // self.vae_scale_factor, width // self.vae_scale_factor)
-            interpolated_mask = F.interpolate(
-                binarized_mask_reshaped,
-                size=target_size,
-                mode='nearest',
-            )
-            mask_latents = interpolated_mask.reshape(b, f, *interpolated_mask.shape[1:])
-        else:
-            raise ValueError(
-                f"Unsupported number of UNet input channels: {self.unet.config.in_channels}. "
-                "This pipeline only supports 9 (for interpolated mask) or 12 (for VAE mask)."
-            )
+        mask_latents = self._encode_video_vae(mask_tensor, device)
+        mask_latents = mask_latents / self.vae.config.scaling_factor
 
         if mask_noise_strength > 0.0:
             mask_noise = randn_tensor(mask_latents.shape, generator=generator, device=device, dtype=dtype)
@@ -894,7 +861,7 @@ class VideoInferencePipeline:
         print(f"--- Models Loaded Successfully on {self.device} ---")
         print(f"--- VAE Encode Chunk Size: {self.vae_encode_chunk_size} frames ---")
 
-    def run(self, cond_frames, mask_frames, seed=42, mask_cond_mode="vae", fps=7, motion_bucket_id=127,
+    def run(self, cond_frames, mask_frames, seed=42, fps=7, motion_bucket_id=127,
             noise_aug_strength=0.0, pbar=None):
         """
         Runs the core inference process on a sequence of conditioning and mask frames.
@@ -903,7 +870,6 @@ class VideoInferencePipeline:
             cond_frames (list[Image.Image]): List of PIL images for conditioning.
             mask_frames (list[Image.Image]): List of PIL images for the masks.
             seed (int): Random seed for generation.
-            mask_cond_mode (str): How the mask is conditioned ("vae" or "interpolate").
             fps (int): Frames per second to condition the model with.
             motion_bucket_id (int): Motion bucket ID for conditioning.
             noise_aug_strength (float): Noise augmentation strength.
@@ -945,18 +911,8 @@ class VideoInferencePipeline:
             cond_latents = self._tensor_to_vae_latent(cond_video_tensor.to(self.weight_dtype))
             cond_latents = cond_latents / self.vae.config.scaling_factor
 
-            if mask_cond_mode == "vae":
-                mask_latents = self._tensor_to_vae_latent(mask_video_tensor.to(self.weight_dtype))
-                mask_latents = mask_latents / self.vae.config.scaling_factor
-            elif mask_cond_mode == "interpolate":
-                target_shape = cond_latents.shape[-2:]
-                b, t, c, h, w = mask_video_tensor.shape
-                mask_video_reshaped = rearrange(mask_video_tensor, "b t c h w -> (b t) c h w")
-                interpolated_mask = F.interpolate(mask_video_reshaped, size=target_shape, mode='bilinear',
-                                                  align_corners=False)
-                mask_latents = rearrange(interpolated_mask, "(b t) c h w -> b t c h w", b=b)
-            else:
-                raise ValueError(f"Unknown mask_cond_mode: {mask_cond_mode}")
+            mask_latents = self._tensor_to_vae_latent(mask_video_tensor.to(self.weight_dtype))
+            mask_latents = mask_latents / self.vae.config.scaling_factor
 
             if self.enable_model_cpu_offload:
                 self.vae.to("cpu")

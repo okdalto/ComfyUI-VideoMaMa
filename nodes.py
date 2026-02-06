@@ -132,8 +132,11 @@ class VideoMaMaSampler:
                     "min": 0,
                     "max": 0xffffffffffffffff
                 }),
-                "mask_cond_mode": (["vae", "interpolate"], {
-                    "default": "vae"
+                "max_resolution": ("INT", {
+                    "default": 1024,
+                    "min": 256,
+                    "max": 2048,
+                    "step": 8
                 }),
                 "fps": ("INT", {
                     "default": 7,
@@ -158,13 +161,27 @@ class VideoMaMaSampler:
     FUNCTION = "run_inference"
     CATEGORY = "VideoMaMa"
 
+    @staticmethod
+    def _compute_target_size(width: int, height: int, max_resolution: int):
+        """Compute target size preserving aspect ratio with longest axis = max_resolution, aligned to 8."""
+        if width >= height:
+            new_width = max_resolution
+            new_height = int(height * max_resolution / width)
+        else:
+            new_height = max_resolution
+            new_width = int(width * max_resolution / height)
+        # Align to multiple of 8
+        new_width = max((new_width // 8) * 8, 8)
+        new_height = max((new_height // 8) * 8, 8)
+        return new_width, new_height
+
     def run_inference(
         self,
         pipeline,
         images,
         masks,
         seed: int,
-        mask_cond_mode: str,
+        max_resolution: int,
         fps: int,
         motion_bucket_id: int,
         noise_aug_strength: float
@@ -178,16 +195,23 @@ class VideoMaMaSampler:
                 f"number of mask frames ({masks.shape[0]})"
             )
 
-        # Convert to PIL Images
+        # Compute target resolution preserving aspect ratio
+        orig_h, orig_w = images.shape[1], images.shape[2]
+        target_w, target_h = self._compute_target_size(orig_w, orig_h, max_resolution)
+        print(f"Input resolution: {orig_w}x{orig_h} -> Target resolution: {target_w}x{target_h} (max_resolution={max_resolution})")
+
+        # Convert to PIL Images and resize to target resolution
         cond_frames = []
         mask_frames = []
 
         for i in range(num_frames):
             img_np = (images[i].cpu().numpy() * 255).astype(np.uint8)
-            cond_frames.append(Image.fromarray(img_np, mode='RGB'))
+            img_pil = Image.fromarray(img_np, mode='RGB')
+            cond_frames.append(img_pil.resize((target_w, target_h), Image.LANCZOS))
 
             mask_np = (masks[i].cpu().numpy() * 255).astype(np.uint8)
-            mask_frames.append(Image.fromarray(mask_np, mode='L'))
+            mask_pil = Image.fromarray(mask_np, mode='L')
+            mask_frames.append(mask_pil.resize((target_w, target_h), Image.LANCZOS))
 
         print(f"Running VideoMaMa inference on {num_frames} frames...")
 
@@ -199,16 +223,17 @@ class VideoMaMaSampler:
                 cond_frames=cond_frames,
                 mask_frames=mask_frames,
                 seed=seed,
-                mask_cond_mode=mask_cond_mode,
                 fps=fps,
                 motion_bucket_id=motion_bucket_id,
                 noise_aug_strength=noise_aug_strength,
                 pbar=pbar
             )
 
-            # Convert back to ComfyUI MASK format [B, H, W]
+            # Convert back to ComfyUI MASK format [B, H, W] at original resolution
             output_masks = []
             for frame_pil in output_frames_pil:
+                # Resize back to original input resolution
+                frame_pil = frame_pil.resize((orig_w, orig_h), Image.LANCZOS)
                 frame_np = np.array(frame_pil).astype(np.float32) / 255.0
                 # Convert to grayscale if RGB
                 if len(frame_np.shape) == 3:
