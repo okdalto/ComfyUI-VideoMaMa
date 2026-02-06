@@ -43,61 +43,6 @@
       ]
     },
     {
-      "id": 24,
-      "type": "VideoMaMaSampler",
-      "pos": [
-        2972.5049919902194,
-        614.5309876466143
-      ],
-      "size": [
-        273.705078125,
-        218
-      ],
-      "flags": {},
-      "order": 5,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "pipeline",
-          "type": "VIDEOMAMA_PIPELINE",
-          "link": 31
-        },
-        {
-          "name": "images",
-          "type": "IMAGE",
-          "link": 30
-        },
-        {
-          "name": "masks",
-          "type": "MASK",
-          "link": 44
-        }
-      ],
-      "outputs": [
-        {
-          "name": "MASK",
-          "type": "MASK",
-          "links": [
-            38
-          ]
-        }
-      ],
-      "properties": {
-        "cnr_id": "ComfyUI-VideoMaMa",
-        "ver": "89c0eb6862ca89f07da8b0da6a17c846f196f084",
-        "Node name for S&R": "VideoMaMaSampler",
-        "aux_id": "okdalto/ComfyUI-VideoMaMa"
-      },
-      "widgets_values": [
-        5116786946371,
-        "randomize",
-        "vae",
-        7,
-        127,
-        0
-      ]
-    },
-    {
       "id": 27,
       "type": "MaskToImage",
       "pos": [
@@ -427,6 +372,61 @@
       ]
     },
     {
+      "id": 24,
+      "type": "VideoMaMaSampler",
+      "pos": [
+        2972.5049919902194,
+        614.5309876466143
+      ],
+      "size": [
+        273.705078125,
+        218
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "pipeline",
+          "type": "VIDEOMAMA_PIPELINE",
+          "link": 31
+        },
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 30
+        },
+        {
+          "name": "masks",
+          "type": "MASK",
+          "link": 44
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            38
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "ComfyUI-VideoMaMa",
+        "ver": "89c0eb6862ca89f07da8b0da6a17c846f196f084",
+        "Node name for S&R": "VideoMaMaSampler",
+        "aux_id": "okdalto/ComfyUI-VideoMaMa"
+      },
+      "widgets_values": [
+        534438828509498,
+        "randomize",
+        1024,
+        7,
+        127,
+        0
+      ]
+    },
+    {
       "id": 30,
       "type": "SAM2VideoMaskGenerator",
       "pos": [
@@ -467,9 +467,9 @@
         "configs/sam2.1/sam2.1_hiera_l.yaml"
       ],
       "sam2PointData": {
-        "points_x": "505,749,267,694,329,534,688,471,161,935,264,814,818,967,95,273",
-        "points_y": "176,267,312,220,248,836,836,939,568,543,159,155,440,858,743,481",
-        "labels": "1,1,1,1,1,1,1,1,1,1,0,0,0,0,0,0"
+        "points_x": "522,530,865,670,120,222,862,123,98,892",
+        "points_y": "383,159,300,783,445,791,116,114,878,927",
+        "labels": "1,1,1,1,1,1,0,0,0,0"
       }
     }
   ],
@@ -583,14 +583,14 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.7087373402228617,
+      "scale": 0.6443066729298791,
       "offset": [
-        -1600.6433857498864,
-        -359.4144152566682
+        -1298.2844370038647,
+        -354.9006980850384
       ]
     },
     "workflowRendererVersion": "LG",
-    "frontendVersion": "1.35.9"
+    "frontendVersion": "1.38.13"
   },
   "version": 0.4
 }
