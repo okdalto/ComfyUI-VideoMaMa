@@ -23,7 +23,7 @@ pip install -r requirements.txt
 ### 2. Download Models
 
 #### Base Model (Auto-download)
-The Stable Video Diffusion base model (~20GB) will be **automatically downloaded** on first use if not present.
+The Stable Video Diffusion base model will be **automatically downloaded** on first use if not present.
 
 To download manually:
 ```bash
@@ -82,13 +82,13 @@ Runs video matting inference with mask conditioning.
 - `images`: Input video frames [N, H, W, C]
 - `masks`: Mask frames [N, H, W, C]
 - `seed`: Random seed (default: 42)
-- `mask_cond_mode`: `vae` or `interpolate` (default: `vae`)
+- `max_resolution`: Longest axis resolution for processing (default: 1024, range: 256-2048). Aspect ratio is preserved and dimensions are aligned to multiples of 8.
 - `fps`: Frames per second (default: 7)
 - `motion_bucket_id`: Motion intensity (default: 127)
 - `noise_aug_strength`: Noise augmentation (default: 0.0)
 
 **Outputs:**
-- `IMAGE`: Generated video frames [N, H, W, C]
+- `MASK`: Generated mask frames [N, H, W] (at original input resolution)
 
 ### 3. SAM2 Video Mask Generator
 Generates masks using SAM2 video tracking (requires SAM2 installation).
@@ -133,10 +133,9 @@ Example workflow files are available in the [`examples/`](examples/) folder. Imp
 
 ## Tips
 
-- **Resolution**: Processes at 1024x576 internally, auto-resizes to original
-- **Mask mode**: `vae` = higher quality but slower, `interpolate` = faster
+- **Resolution**: `max_resolution` controls the longest axis. Aspect ratio is preserved and output is resized back to the original input resolution. For example, a 1920x1080 input with `max_resolution=1024` is processed at 1024x576.
 - **Motion Bucket**: Lower (50-100) = subtle, Higher (150-200) = dynamic
-- **VRAM**: Requires ~12GB for 1024x576 resolution
+- **VRAM**: Higher `max_resolution` requires more VRAM
 
 ## Troubleshooting
 
@@ -149,7 +148,7 @@ cd sam2 && pip install -e .
 **"Failed to load pipeline"**
 - Check model paths are correct
 - Ensure all model files downloaded
-- Check VRAM availability (12GB+ recommended)
+- Check VRAM availability
 
 **"Frame count mismatch"**
 - Ensure image and mask sequences have same number of frames
@@ -158,7 +157,7 @@ cd sam2 && pip install -e .
 
 - Python 3.10+
 - PyTorch 2.0+ with CUDA
-- ~12GB VRAM for 1024x576
+- GPU with sufficient VRAM
 - ComfyUI
 
 See `requirements.txt` for full dependencies.
