@@ -57,6 +57,15 @@ class VideoMaMaPipelineLoader:
                     "max": 25,
                     "step": 1
                 }),
+                "attention_mode": (["auto", "xformers", "sdpa", "none"], {
+                    "default": "auto"
+                }),
+                "enable_vae_tiling": ("BOOLEAN", {
+                    "default": False
+                }),
+                "enable_vae_slicing": ("BOOLEAN", {
+                    "default": True
+                }),
             }
         }
 
@@ -70,7 +79,10 @@ class VideoMaMaPipelineLoader:
         unet_checkpoint_path: str,
         precision: str,
         enable_model_cpu_offload: bool,
-        vae_encode_chunk_size: int
+        vae_encode_chunk_size: int,
+        attention_mode: str,
+        enable_vae_tiling: bool,
+        enable_vae_slicing: bool
     ):
         """Load the VideoMaMa inference pipeline"""
         weight_dtype = torch.float16 if precision == "fp16" else torch.bfloat16
@@ -98,6 +110,9 @@ class VideoMaMaPipelineLoader:
         print(f"  UNet checkpoint: {unet_checkpoint_path}")
         print(f"  Model CPU Offload: {enable_model_cpu_offload}")
         print(f"  VAE Encode Chunk Size: {vae_encode_chunk_size}")
+        print(f"  Attention Mode: {attention_mode}")
+        print(f"  VAE Tiling: {enable_vae_tiling}")
+        print(f"  VAE Slicing: {enable_vae_slicing}")
 
         try:
             pipeline = VideoInferencePipeline(
@@ -106,12 +121,40 @@ class VideoMaMaPipelineLoader:
                 weight_dtype=weight_dtype,
                 device="cuda" if torch.cuda.is_available() else "cpu",
                 enable_model_cpu_offload=enable_model_cpu_offload,
-                vae_encode_chunk_size=vae_encode_chunk_size
+                vae_encode_chunk_size=vae_encode_chunk_size,
+                attention_mode=attention_mode,
+                enable_vae_tiling=enable_vae_tiling,
+                enable_vae_slicing=enable_vae_slicing
             )
             print(f"VideoMaMa pipeline loaded successfully with {precision} precision")
             return (pipeline,)
         except Exception as e:
             raise RuntimeError(f"Failed to load VideoMaMa pipeline: {e}")
+
+
+def _ensure_2d_mask(mask_np: np.ndarray) -> np.ndarray:
+    """Ensure mask array is 2D (H, W) for PIL grayscale mode.
+
+    Some mask sources (e.g. MatAnyone) output masks with extra dimensions
+    like [C, H, W] or [H, W, C] instead of the standard ComfyUI [H, W].
+    This helper squeezes/removes those extra dimensions.
+    """
+    if mask_np.ndim == 2:
+        return mask_np
+    if mask_np.ndim == 3:
+        # [1, H, W] -> [H, W]  or  [H, W, 1] -> [H, W]
+        if mask_np.shape[0] == 1:
+            return mask_np[0]
+        if mask_np.shape[-1] == 1:
+            return mask_np[:, :, 0]
+    # General fallback: squeeze all singleton dimensions
+    mask_np = np.squeeze(mask_np)
+    if mask_np.ndim == 2:
+        return mask_np
+    # If still not 2D, take first slice along leading dims until 2D
+    while mask_np.ndim > 2:
+        mask_np = mask_np[0]
+    return mask_np
 
 
 class VideoMaMaSampler:
@@ -210,6 +253,7 @@ class VideoMaMaSampler:
             cond_frames.append(img_pil.resize((target_w, target_h), Image.LANCZOS))
 
             mask_np = (masks[i].cpu().numpy() * 255).astype(np.uint8)
+            mask_np = _ensure_2d_mask(mask_np)
             mask_pil = Image.fromarray(mask_np, mode='L')
             mask_frames.append(mask_pil.resize((target_w, target_h), Image.LANCZOS))
 
