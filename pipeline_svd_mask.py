@@ -965,7 +965,8 @@ class VideoInferencePipeline:
             video_tensor = torch.cat(frames, dim=0)
             video_tensor = (video_tensor / 2.0 + 0.5).clamp(0, 1).mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
-            # Return a list of PIL images
+            # Return a list of PIL images (cast to float32 for ToPILImage compatibility)
+            video_tensor = video_tensor.float()
             return [transforms.ToPILImage()(frame) for frame in video_tensor]
 
     def _pil_to_tensor(self, frames: list[Image.Image]):
