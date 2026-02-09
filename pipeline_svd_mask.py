@@ -812,7 +812,8 @@ class VideoInferencePipeline:
 
     def __init__(self, base_model_path: str, unet_checkpoint_path: str, device: str = "cuda",
                  weight_dtype: torch.dtype = torch.float16, enable_model_cpu_offload: bool = False,
-                 vae_encode_chunk_size: int = 8):
+                 vae_encode_chunk_size: int = 8, attention_mode: str = "auto",
+                 enable_vae_tiling: bool = False, enable_vae_slicing: bool = True):
         """
         Loads all necessary models into memory.
 
@@ -823,6 +824,9 @@ class VideoInferencePipeline:
             weight_dtype (torch.dtype): The precision for model weights (float16 or bfloat16).
             enable_model_cpu_offload (bool): If True, models are kept on CPU and moved to GPU only when needed.
             vae_encode_chunk_size (int): Number of frames to encode at once in VAE (lower = less memory).
+            attention_mode (str): Attention optimization: 'auto', 'xformers', 'sdpa', or 'none'.
+            enable_vae_tiling (bool): Enable tiled VAE encoding/decoding for lower memory.
+            enable_vae_slicing (bool): Enable VAE slicing to process one image at a time.
         """
         print("--- Initializing Inference Pipeline and Loading Models ---")
         self.device = torch.device(device if torch.cuda.is_available() else "cpu")
@@ -846,6 +850,24 @@ class VideoInferencePipeline:
         self.vae.eval()
         self.unet.eval()
 
+        # --- Apply attention optimizations ---
+        self._apply_attention_optimization(attention_mode)
+
+        # --- Apply VAE memory optimizations ---
+        if enable_vae_slicing:
+            try:
+                self.vae.enable_slicing()
+                print("--- VAE Slicing ENABLED ---")
+            except AttributeError:
+                print("--- VAE Slicing not supported by this VAE version ---")
+
+        if enable_vae_tiling:
+            try:
+                self.vae.enable_tiling()
+                print("--- VAE Tiling ENABLED ---")
+            except AttributeError:
+                print("--- VAE Tiling not supported by this VAE version ---")
+
         if self.enable_model_cpu_offload:
             # Keep models on CPU initially, move to GPU only when needed
             print(f"--- Model CPU Offloading ENABLED (memory optimization) ---")
@@ -860,6 +882,42 @@ class VideoInferencePipeline:
 
         print(f"--- Models Loaded Successfully on {self.device} ---")
         print(f"--- VAE Encode Chunk Size: {self.vae_encode_chunk_size} frames ---")
+
+    def _apply_attention_optimization(self, attention_mode: str):
+        """Apply memory-efficient attention to the UNet."""
+        if attention_mode == "none":
+            print("--- Attention optimization: DISABLED ---")
+            return
+
+        # Try xformers first if requested or auto
+        if attention_mode in ("auto", "xformers"):
+            try:
+                import xformers  # noqa: F401
+                self.unet.enable_xformers_memory_efficient_attention()
+                print("--- Attention optimization: xformers ENABLED ---")
+                return
+            except (ImportError, ModuleNotFoundError):
+                if attention_mode == "xformers":
+                    print("--- WARNING: xformers not installed, falling back to default attention ---")
+            except Exception as e:
+                print(f"--- WARNING: xformers failed ({e}), trying alternatives ---")
+
+        # Try PyTorch 2.0+ SDPA
+        if attention_mode in ("auto", "sdpa"):
+            if hasattr(torch.nn.functional, "scaled_dot_product_attention"):
+                try:
+                    from diffusers.models.attention_processor import AttnProcessor2_0
+                    self.unet.set_attn_processor(AttnProcessor2_0())
+                    print("--- Attention optimization: PyTorch SDPA ENABLED ---")
+                    return
+                except Exception as e:
+                    if attention_mode == "sdpa":
+                        print(f"--- WARNING: SDPA setup failed ({e}) ---")
+            elif attention_mode == "sdpa":
+                print("--- WARNING: SDPA requires PyTorch 2.0+, falling back to default ---")
+
+        if attention_mode == "auto":
+            print("--- Attention optimization: using default attention ---")
 
     def run(self, cond_frames, mask_frames, seed=42, fps=7, motion_bucket_id=127,
             noise_aug_strength=0.0, pbar=None):
@@ -914,6 +972,10 @@ class VideoInferencePipeline:
             mask_latents = self._tensor_to_vae_latent(mask_video_tensor.to(self.weight_dtype))
             mask_latents = mask_latents / self.vae.config.scaling_factor
 
+            # Free raw pixel tensors - no longer needed after VAE encoding
+            del cond_video_tensor, mask_video_tensor
+            torch.cuda.empty_cache()
+
             if self.enable_model_cpu_offload:
                 self.vae.to("cpu")
                 torch.cuda.empty_cache()
@@ -932,11 +994,16 @@ class VideoInferencePipeline:
             added_time_ids = self._get_add_time_ids(fps, motion_bucket_id, noise_aug_strength, batch_size=1)
 
             unet_input = torch.cat([noisy_latents, cond_latents, mask_latents], dim=2)
+            # Free intermediate latents before UNet forward pass
+            del noisy_latents, cond_latents, mask_latents
+            torch.cuda.empty_cache()
+
             pred_latents = self.unet(unet_input, timesteps, encoder_hidden_states, added_time_ids=added_time_ids).sample
 
+            del unet_input
             if self.enable_model_cpu_offload:
                 self.unet.to("cpu")
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
             if pbar is not None:
                 pbar.update(1)
@@ -948,21 +1015,23 @@ class VideoInferencePipeline:
             pred_latents = (1 / self.vae.config.scaling_factor) * pred_latents.squeeze(0)
 
             frames = []
-            # Process in chunks to avoid VRAM issues, especially for long videos
-            decode_chunk_size = min(4, pred_latents.shape[0])  # Reduced chunk size for memory optimization
+            # Process in chunks to avoid VRAM issues (lower = less memory, slower)
+            decode_chunk_size = min(self.vae_encode_chunk_size, pred_latents.shape[0])
             for i in range(0, pred_latents.shape[0], decode_chunk_size):
                 chunk = pred_latents[i: i + decode_chunk_size]
                 decoded_chunk = self.vae.decode(chunk, num_frames=chunk.shape[0]).sample
-                frames.append(decoded_chunk)
+                frames.append(decoded_chunk.cpu())  # Move decoded frames to CPU immediately
 
+            del pred_latents
             if self.enable_model_cpu_offload:
                 self.vae.to("cpu")
-                torch.cuda.empty_cache()
+            torch.cuda.empty_cache()
 
             if pbar is not None:
                 pbar.update(1)
 
             video_tensor = torch.cat(frames, dim=0)
+            del frames
             video_tensor = (video_tensor / 2.0 + 0.5).clamp(0, 1).mean(dim=1, keepdim=True).repeat(1, 3, 1, 1)
 
             # Return a list of PIL images (cast to float32 for ToPILImage compatibility)

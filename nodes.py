@@ -57,6 +57,15 @@ class VideoMaMaPipelineLoader:
                     "max": 25,
                     "step": 1
                 }),
+                "attention_mode": (["auto", "xformers", "sdpa", "none"], {
+                    "default": "auto"
+                }),
+                "enable_vae_tiling": ("BOOLEAN", {
+                    "default": False
+                }),
+                "enable_vae_slicing": ("BOOLEAN", {
+                    "default": True
+                }),
             }
         }
 
@@ -70,7 +79,10 @@ class VideoMaMaPipelineLoader:
         unet_checkpoint_path: str,
         precision: str,
         enable_model_cpu_offload: bool,
-        vae_encode_chunk_size: int
+        vae_encode_chunk_size: int,
+        attention_mode: str,
+        enable_vae_tiling: bool,
+        enable_vae_slicing: bool
     ):
         """Load the VideoMaMa inference pipeline"""
         weight_dtype = torch.float16 if precision == "fp16" else torch.bfloat16
@@ -98,6 +110,9 @@ class VideoMaMaPipelineLoader:
         print(f"  UNet checkpoint: {unet_checkpoint_path}")
         print(f"  Model CPU Offload: {enable_model_cpu_offload}")
         print(f"  VAE Encode Chunk Size: {vae_encode_chunk_size}")
+        print(f"  Attention Mode: {attention_mode}")
+        print(f"  VAE Tiling: {enable_vae_tiling}")
+        print(f"  VAE Slicing: {enable_vae_slicing}")
 
         try:
             pipeline = VideoInferencePipeline(
@@ -106,7 +121,10 @@ class VideoMaMaPipelineLoader:
                 weight_dtype=weight_dtype,
                 device="cuda" if torch.cuda.is_available() else "cpu",
                 enable_model_cpu_offload=enable_model_cpu_offload,
-                vae_encode_chunk_size=vae_encode_chunk_size
+                vae_encode_chunk_size=vae_encode_chunk_size,
+                attention_mode=attention_mode,
+                enable_vae_tiling=enable_vae_tiling,
+                enable_vae_slicing=enable_vae_slicing
             )
             print(f"VideoMaMa pipeline loaded successfully with {precision} precision")
             return (pipeline,)
