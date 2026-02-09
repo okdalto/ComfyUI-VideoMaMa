@@ -114,6 +114,31 @@ class VideoMaMaPipelineLoader:
             raise RuntimeError(f"Failed to load VideoMaMa pipeline: {e}")
 
 
+def _ensure_2d_mask(mask_np: np.ndarray) -> np.ndarray:
+    """Ensure mask array is 2D (H, W) for PIL grayscale mode.
+
+    Some mask sources (e.g. MatAnyone) output masks with extra dimensions
+    like [C, H, W] or [H, W, C] instead of the standard ComfyUI [H, W].
+    This helper squeezes/removes those extra dimensions.
+    """
+    if mask_np.ndim == 2:
+        return mask_np
+    if mask_np.ndim == 3:
+        # [1, H, W] -> [H, W]  or  [H, W, 1] -> [H, W]
+        if mask_np.shape[0] == 1:
+            return mask_np[0]
+        if mask_np.shape[-1] == 1:
+            return mask_np[:, :, 0]
+    # General fallback: squeeze all singleton dimensions
+    mask_np = np.squeeze(mask_np)
+    if mask_np.ndim == 2:
+        return mask_np
+    # If still not 2D, take first slice along leading dims until 2D
+    while mask_np.ndim > 2:
+        mask_np = mask_np[0]
+    return mask_np
+
+
 class VideoMaMaSampler:
     """
     Runs VideoMaMa inference on video frames with mask conditioning.
@@ -210,6 +235,7 @@ class VideoMaMaSampler:
             cond_frames.append(img_pil.resize((target_w, target_h), Image.LANCZOS))
 
             mask_np = (masks[i].cpu().numpy() * 255).astype(np.uint8)
+            mask_np = _ensure_2d_mask(mask_np)
             mask_pil = Image.fromarray(mask_np, mode='L')
             mask_frames.append(mask_pil.resize((target_w, target_h), Image.LANCZOS))
 
