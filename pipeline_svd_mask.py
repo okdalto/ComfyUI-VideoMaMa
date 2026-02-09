@@ -858,14 +858,14 @@ class VideoInferencePipeline:
             try:
                 self.vae.enable_slicing()
                 print("--- VAE Slicing ENABLED ---")
-            except AttributeError:
+            except (AttributeError, NotImplementedError):
                 print("--- VAE Slicing not supported by this VAE version ---")
 
         if enable_vae_tiling:
             try:
                 self.vae.enable_tiling()
                 print("--- VAE Tiling ENABLED ---")
-            except AttributeError:
+            except (AttributeError, NotImplementedError):
                 print("--- VAE Tiling not supported by this VAE version ---")
 
         if self.enable_model_cpu_offload:
